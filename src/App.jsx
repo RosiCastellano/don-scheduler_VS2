@@ -171,11 +171,11 @@ const BLOCK_COLORS = {
 
 // FEATURE 3: Draggable block types for scheduling
 const DRAGGABLE_BLOCK_TYPES = [
-  { id: 'dod-extra', name: 'Extra DOD', icon: '🔔', color: BLOCK_COLORS.dod, defaultHours: 3 },
-  { id: 'social', name: 'Social Time', icon: '👥', color: BLOCK_COLORS.social, defaultHours: 2 },
-  { id: 'study', name: 'Study Time', icon: '📚', color: BLOCK_COLORS.study, defaultHours: 2 },
-  { id: 'personal', name: 'Personal Time', icon: '🧘', color: BLOCK_COLORS.personal, defaultHours: 1 },
-  { id: 'exercise', name: 'Exercise', icon: '🏃', color: BLOCK_COLORS.exercise, defaultHours: 1 },
+  { id: 'dod-extra', name: 'Extra DOD', color: BLOCK_COLORS.dod, defaultHours: 3 },
+  { id: 'social', name: 'Social', color: BLOCK_COLORS.social, defaultHours: 2 },
+  { id: 'study', name: 'Study', color: BLOCK_COLORS.study, defaultHours: 2 },
+  { id: 'personal', name: 'Personal', color: BLOCK_COLORS.personal, defaultHours: 1 },
+  { id: 'exercise', name: 'Exercise', color: BLOCK_COLORS.exercise, defaultHours: 1 },
 ];
 
 // Helper to generate month key
@@ -436,7 +436,6 @@ export default function DonScheduler() {
       id: Date.now(),
       type: draggedBlockType,
       name: blockConfig.name,
-      icon: blockConfig.icon,
       color: blockConfig.color,
       hours: blockConfig.defaultHours,
       startHour: hour
@@ -560,7 +559,6 @@ export default function DonScheduler() {
       id: Date.now(),
       type: rec.type,
       name: blockConfig.name,
-      icon: blockConfig.icon,
       color: blockConfig.color,
       hours: rec.hours,
       startHour: rec.startHour
@@ -583,7 +581,6 @@ export default function DonScheduler() {
         id: Date.now() + Math.random(),
         type: rec.type,
         name: blockConfig.name,
-        icon: blockConfig.icon,
         color: blockConfig.color,
         hours: rec.hours,
         startHour: rec.startHour
@@ -798,7 +795,7 @@ export default function DonScheduler() {
       dayBlocks.forEach(block => {
         events.push({ 
           type: block.type, 
-          name: `${block.icon} ${block.name}`, 
+          name: block.name, 
           time: `${block.hours}h`,
           blockId: block.id,
           dateStr
@@ -1007,7 +1004,7 @@ export default function DonScheduler() {
       <style>{styles}</style>
       
       <div className="header">
-        <h1>🎓 Don Schedule Manager</h1>
+        <h1>Don Schedule Manager</h1>
         <p>Plan your weekly commitments & monthly hours</p>
       </div>
 
@@ -1188,7 +1185,7 @@ export default function DonScheduler() {
                   const total = getDodMonthTotal(monthKey);
                   return (
                     <div key={monthKey} className={`month-folder ${monthKey === currentDodMonthKey ? 'active' : ''}`} onClick={() => setSelectedDodMonth({ month: month - 1, year })}>
-                      <div className="month-folder-icon">📋</div>
+                      <Folder size={24} />
                       <div className="month-folder-info">
                         <h4>{MONTHS[month - 1]} {year}</h4>
                         <p>{total.toFixed(1)} hours</p>
@@ -1301,7 +1298,7 @@ export default function DonScheduler() {
           
           {/* EB Events */}
           <div style={{ marginBottom: 30 }}>
-            <h3 style={{ marginBottom: 15, color: BLOCK_COLORS.eb.bg }}>📋 Educational Bulletins</h3>
+            <h3 style={{ marginBottom: 15, color: BLOCK_COLORS.eb.bg }}>Educational Bulletins</h3>
             {ebWindows.map(window => (
               <div key={window.num} style={{ padding: 15, background: 'rgba(255,214,153,0.1)', borderRadius: 10, marginBottom: 15 }}>
                 <div style={{ marginBottom: 10 }}>
@@ -1333,7 +1330,7 @@ export default function DonScheduler() {
           
           {/* BTE Events */}
           <div>
-            <h3 style={{ marginBottom: 15, color: BLOCK_COLORS.bte.bg }}>👂 Behind the Ears</h3>
+            <h3 style={{ marginBottom: 15, color: BLOCK_COLORS.bte.bg }}>Behind the Ears</h3>
             {bteWindows.map(window => (
               <div key={window.num} style={{ padding: 15, background: 'rgba(212,184,232,0.1)', borderRadius: 10, marginBottom: 15 }}>
                 <div style={{ marginBottom: 10 }}>
@@ -1416,7 +1413,7 @@ export default function DonScheduler() {
             if (!metrics) return null;
             return (
               <div style={{ background: 'rgba(134, 197, 184, 0.1)', padding: 20, borderRadius: 12, marginBottom: 20 }}>
-                <h4 style={{ marginBottom: 15, color: '#86c5b8' }}>📊 Connection Targets</h4>
+                <h4 style={{ marginBottom: 15, color: '#86c5b8' }}>Connection Targets</h4>
                 <div className="metrics-grid">
                   <div className="metric-card">
                     <div className="value">{metrics.total}</div>
@@ -1513,7 +1510,6 @@ export default function DonScheduler() {
             <span className="block-palette-label">Drag blocks to calendar:</span>
             {DRAGGABLE_BLOCK_TYPES.map(block => (
               <div key={block.id} className="block-palette-item" style={{ background: block.color.bg, color: block.color.text }} draggable onDragStart={() => handleBlockDragStart(block.id)} onDragEnd={handleBlockDragEnd}>
-                <span>{block.icon}</span>
                 <span>{block.name}</span>
                 <span style={{ opacity: 0.7, fontSize: '0.8rem' }}>{block.defaultHours}h</span>
               </div>
@@ -1536,7 +1532,7 @@ export default function DonScheduler() {
                 return (
                   <div key={rec.id} className="recommendation-item">
                     <div className="rec-text">
-                      <span style={{ fontSize: '1.2rem' }}>{blockConfig?.icon}</span>
+                      <span style={{ width: 12, height: 12, borderRadius: '50%', background: blockConfig?.color.bg, display: 'inline-block' }}></span>
                       <span>{rec.message}</span>
                     </div>
                     <button onClick={() => applyRecommendation(rec)}>Apply</button>
@@ -1650,15 +1646,15 @@ export default function DonScheduler() {
                       // Scheduled blocks (drag-and-drop)
                       const dayBlocks = scheduledBlocks[dateStr] || [];
                       dayBlocks.filter(b => b.startHour === hour).forEach(b => {
-                        blocks.push({ type: b.type, name: `${b.icon} ${b.name}`, duration: b.hours, locked: false, blockId: b.id, dateStr });
+                        blocks.push({ type: b.type, name: b.name, duration: b.hours, locked: false, blockId: b.id, dateStr });
                       });
                       
                       // Meals
                       const meals = weeklyMeals[day];
                       if (meals) {
-                        if (meals.breakfast.start === hour) blocks.push({ type: 'breakfast', name: '🍳', duration: 1, locked: false });
-                        if (meals.lunch.start === hour) blocks.push({ type: 'lunch', name: '🥗', duration: 1, locked: false });
-                        if (meals.dinner.start === hour) blocks.push({ type: 'dinner', name: '🍽️', duration: 1, locked: false });
+                        if (meals.breakfast.start === hour) blocks.push({ type: 'breakfast', name: 'Breakfast', duration: 1, locked: false });
+                        if (meals.lunch.start === hour) blocks.push({ type: 'lunch', name: 'Lunch', duration: 1, locked: false });
+                        if (meals.dinner.start === hour) blocks.push({ type: 'dinner', name: 'Dinner', duration: 1, locked: false });
                       }
                       
                       return (
