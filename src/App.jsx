@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Upload, Plus, X, Calendar, Clock, Users, BookOpen, ChevronRight, ChevronLeft, Check, AlertCircle, Target, CalendarDays, ArrowLeft, ArrowRight, FileSpreadsheet, Lock, GripVertical, Package, Star, Folder, Trash2 } from 'lucide-react';
+import React, { useState, useRef, useMemo } from 'react';
+import { Upload, Plus, X, Calendar, Clock, Users, BookOpen, ChevronRight, ChevronLeft, Check, AlertCircle, Target, CalendarDays, ArrowLeft, ArrowRight, FileSpreadsheet, Lock, GripVertical, Package, Star, Folder, Trash2, Lightbulb, LayoutGrid, List, Coffee, Dumbbell, Brain, Heart, Sparkles } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -116,7 +116,6 @@ const getEBBTEWindows = () => {
     });
   });
   
-  // Find EB windows
   for (let i = 1; i <= 4; i++) {
     const open = allEvents.find(e => e.category === 'eb-open' && e.reportNum === i);
     const close = allEvents.find(e => e.category === 'eb-close' && e.reportNum === i);
@@ -131,7 +130,6 @@ const getEBBTEWindows = () => {
     }
   }
   
-  // Find BTE windows
   for (let i = 1; i <= 4; i++) {
     const open = allEvents.find(e => e.category === 'bte-open' && e.reportNum === i);
     const close = allEvents.find(e => e.category === 'bte-close' && e.reportNum === i);
@@ -165,7 +163,20 @@ const BLOCK_COLORS = {
   dinner: { bg: '#e8d4d4', text: '#5c3d3d' },
   eb: { bg: '#ffd699', text: '#664400' },
   bte: { bg: '#d4b8e8', text: '#4a2d5c' },
+  social: { bg: '#ffb3ba', text: '#5c2d33' },
+  study: { bg: '#bae1ff', text: '#2d4a5c' },
+  personal: { bg: '#baffc9', text: '#2d5c3d' },
+  exercise: { bg: '#ffdfba', text: '#5c4a2d' },
 };
+
+// FEATURE 3: Draggable block types for scheduling
+const DRAGGABLE_BLOCK_TYPES = [
+  { id: 'dod-extra', name: 'Extra DOD', icon: '🔔', color: BLOCK_COLORS.dod, defaultHours: 3 },
+  { id: 'social', name: 'Social Time', icon: '👥', color: BLOCK_COLORS.social, defaultHours: 2 },
+  { id: 'study', name: 'Study Time', icon: '📚', color: BLOCK_COLORS.study, defaultHours: 2 },
+  { id: 'personal', name: 'Personal Time', icon: '🧘', color: BLOCK_COLORS.personal, defaultHours: 1 },
+  { id: 'exercise', name: 'Exercise', icon: '🏃', color: BLOCK_COLORS.exercise, defaultHours: 1 },
+];
 
 // Helper to generate month key
 const getMonthKey = (month, year) => `${year}-${String(month + 1).padStart(2, '0')}`;
@@ -182,7 +193,7 @@ export default function DonScheduler() {
   const [dodShifts, setDodShifts] = useState([]);
   const [newDodDay, setNewDodDay] = useState('Monday');
   
-  // DOD Monthly Hours - NEW: Flexible monthly hour tracking
+  // FEATURE 2: DOD Monthly Hours - Flexible monthly hour tracking
   const [dodMonthlyHours, setDodMonthlyHours] = useState({});
   const [selectedDodMonth, setSelectedDodMonth] = useState({ month: 8, year: 2025 });
   const [newDodEntry, setNewDodEntry] = useState({ date: '', startTime: '20:00', endTime: '23:00', notes: '' });
@@ -197,7 +208,7 @@ export default function DonScheduler() {
   const [newEB, setNewEB] = useState({ windowNum: 1, date: '', hours: 2 });
   const [newBTE, setNewBTE] = useState({ windowNum: 1, date: '', hours: 2 });
   
-  // Community Connections - NEW: Monthly RLM-aligned tracking
+  // FEATURE 1: Community Connections - Monthly RLM-aligned tracking
   const [communityConnections, setCommunityConnections] = useState({});
   const [selectedConnectionMonth, setSelectedConnectionMonth] = useState({ month: 8, year: 2025 });
   const [newConnection, setNewConnection] = useState({ startDate: '', dueDate: '', communitySize: '' });
@@ -214,10 +225,19 @@ export default function DonScheduler() {
     return initial;
   });
   
-  // View state
+  // FEATURE 5: View state - Monthly/Weekly toggle with persistence
   const [selectedMonth, setSelectedMonth] = useState({ month: 8, year: 2025 });
   const [selectedWeek, setSelectedWeek] = useState(null);
+  const [viewMode, setViewMode] = useState('month'); // 'month' or 'week'
   const [isDraggingClass, setIsDraggingClass] = useState(false);
+  
+  // FEATURE 3: Scheduled blocks (drag-and-drop additions)
+  const [scheduledBlocks, setScheduledBlocks] = useState({}); // { "2025-09-15": [{ id, type, hours, startHour }] }
+  const [draggedBlockType, setDraggedBlockType] = useState(null);
+  
+  // FEATURE 4: Smart recommendations
+  const [showRecommendations, setShowRecommendations] = useState(false);
+  const [recommendations, setRecommendations] = useState([]);
   
   // Weekly meals
   const [weeklyMeals, setWeeklyMeals] = useState(() => {
@@ -250,142 +270,87 @@ export default function DonScheduler() {
     return hour;
   };
 
-  const normalizeDay = (dayStr) => {
-    if (!dayStr) return null;
-    const day = dayStr.toString().trim().toLowerCase();
+  const normalizeDay = (day) => {
     const dayMap = {
-      'monday': 'Monday', 'mon': 'Monday', 'm': 'Monday',
-      'tuesday': 'Tuesday', 'tue': 'Tuesday', 'tu': 'Tuesday', 't': 'Tuesday',
-      'wednesday': 'Wednesday', 'wed': 'Wednesday', 'w': 'Wednesday',
-      'thursday': 'Thursday', 'thu': 'Thursday', 'th': 'Thursday', 'r': 'Thursday',
-      'friday': 'Friday', 'fri': 'Friday', 'f': 'Friday',
-      'saturday': 'Saturday', 'sat': 'Saturday', 's': 'Saturday',
-      'sunday': 'Sunday', 'sun': 'Sunday', 'u': 'Sunday',
+      'M': 'Monday', 'Mo': 'Monday', 'Mon': 'Monday',
+      'T': 'Tuesday', 'Tu': 'Tuesday', 'Tue': 'Tuesday', 'Tues': 'Tuesday',
+      'W': 'Wednesday', 'We': 'Wednesday', 'Wed': 'Wednesday',
+      'R': 'Thursday', 'Th': 'Thursday', 'Thu': 'Thursday', 'Thur': 'Thursday', 'Thurs': 'Thursday',
+      'F': 'Friday', 'Fr': 'Friday', 'Fri': 'Friday',
+      'S': 'Saturday', 'Sa': 'Saturday', 'Sat': 'Saturday',
+      'Su': 'Sunday', 'Sun': 'Sunday',
     };
-    return dayMap[day] || null;
+    const clean = day?.toString().trim();
+    return dayMap[clean] || DAYS.find(d => d.toLowerCase().startsWith(clean?.toLowerCase())) || null;
   };
 
-  const parseExcelFile = (file) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        
-        let headerRowIndex = 0;
-        let dayCol = -1, startCol = -1, endCol = -1, courseCol = -1;
-        
-        for (let i = 0; i < Math.min(5, jsonData.length); i++) {
-          const row = jsonData[i];
-          if (!row) continue;
-          for (let j = 0; j < row.length; j++) {
-            const cell = (row[j] || '').toString().toLowerCase().trim();
-            if (cell.includes('day')) dayCol = j;
-            if (cell.includes('start')) startCol = j;
-            if (cell.includes('end')) endCol = j;
-            if (cell.includes('course') || cell.includes('class') || cell.includes('name')) courseCol = j;
-          }
-          if (dayCol >= 0 && startCol >= 0 && endCol >= 0) { headerRowIndex = i; break; }
-        }
-        
-        if (dayCol < 0) { dayCol = 0; startCol = 1; endCol = 2; courseCol = 3; headerRowIndex = -1; }
-        
-        const parsedClasses = [];
-        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
-          const row = jsonData[i];
-          if (!row || row.length === 0) continue;
-          const day = normalizeDay(row[dayCol]);
-          const startTime = parseTimeToHour(row[startCol]);
-          const endTime = parseTimeToHour(row[endCol]);
-          const courseName = courseCol >= 0 ? (row[courseCol] || '').toString().trim() : `Class ${i}`;
-          if (day && startTime !== null && endTime !== null && courseName) {
-            parsedClasses.push({ id: Date.now() + i, name: courseName, day, startTime: startTime.toString(), endTime: endTime.toString() });
-          }
-        }
-        
-        if (parsedClasses.length > 0) {
-          setClasses(prev => [...prev, ...parsedClasses]);
-          setUploadStatus(`\u2713 Imported ${parsedClasses.length} classes`);
-        } else {
-          setUploadStatus('\u26a0 No classes found. Check file format.');
-        }
-      } catch (error) {
-        setUploadStatus('\u26a0 Error reading file.');
-      }
+  const formatTime = (hour) => {
+    if (hour === 0) return '12 AM';
+    if (hour < 12) return `${hour} AM`;
+    if (hour === 12) return '12 PM';
+    return `${hour - 12} PM`;
+  };
+
+  const formatTimeRange = (startTime, endTime) => {
+    const formatT = (t) => {
+      const [h, m] = t.split(':').map(Number);
+      const period = h >= 12 ? 'PM' : 'AM';
+      const hour = h % 12 || 12;
+      return `${hour}:${m.toString().padStart(2, '0')} ${period}`;
     };
-    reader.readAsArrayBuffer(file);
+    return `${formatT(startTime)} - ${formatT(endTime)}`;
   };
 
-  const handleClassFileSelect = (e) => {
-    const file = e.target.files?.[0];
-    if (file) parseExcelFile(file);
-    if (classInputRef.current) classInputRef.current.value = '';
-  };
-
-  const handleClassDrop = (e) => {
-    e.preventDefault(); e.stopPropagation(); setIsDraggingClass(false);
-    const file = e.dataTransfer.files[0];
-    if (file) parseExcelFile(file);
-  };
-
-  const addClass = () => {
-    if (newClass.name && parseInt(newClass.startTime) < parseInt(newClass.endTime)) {
-      setClasses([...classes, { ...newClass, id: Date.now() }]);
-      setNewClass({ name: '', day: 'Monday', startTime: '9', endTime: '10' });
+  const getWeeksInMonth = (month, year) => {
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const weeks = [];
+    let current = new Date(firstDay);
+    current.setDate(current.getDate() - current.getDay() + 1);
+    
+    while (current <= lastDay || weeks.length < 1) {
+      const weekStart = new Date(current);
+      const weekEnd = new Date(current);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      weeks.push({ start: weekStart, end: weekEnd });
+      current.setDate(current.getDate() + 7);
+      if (weeks.length > 6) break;
     }
+    return weeks;
   };
 
-  const addMeeting = () => {
-    const meeting = { id: Date.now(), day: newMeeting.day, time: newMeeting.time };
-    setMeetings(prev => ({ ...prev, [newMeeting.type]: [...prev[newMeeting.type], meeting] }));
-  };
-
-  const addEBEvent = () => {
-    if (newEB.date && newEB.hours > 0) {
-      setEbEvents([...ebEvents, { ...newEB, id: Date.now() }]);
-      setNewEB({ windowNum: newEB.windowNum, date: '', hours: 2 });
-    }
-  };
-
-  const addBTEEvent = () => {
-    if (newBTE.date && newBTE.hours > 0) {
-      setBteEvents([...bteEvents, { ...newBTE, id: Date.now() }]);
-      setNewBTE({ windowNum: newBTE.windowNum, date: '', hours: 2 });
-    }
-  };
-
-  // DOD Monthly Hours Functions
+  // DOD Monthly Hours Functions (FEATURE 2)
+  const currentDodMonthKey = getMonthKey(selectedDodMonth.month, selectedDodMonth.year);
+  
   const addDodEntry = () => {
-    if (newDodEntry.date && newDodEntry.startTime && newDodEntry.endTime) {
-      const monthKey = getMonthKey(selectedDodMonth.month, selectedDodMonth.year);
-      const start = newDodEntry.startTime.split(':').map(Number);
-      const end = newDodEntry.endTime.split(':').map(Number);
-      const hours = (end[0] + end[1]/60) - (start[0] + start[1]/60);
-      
-      const entry = {
-        id: Date.now(),
-        date: newDodEntry.date,
-        startTime: newDodEntry.startTime,
-        endTime: newDodEntry.endTime,
-        hours: Math.round(hours * 100) / 100,
-        notes: newDodEntry.notes
-      };
-      
-      setDodMonthlyHours(prev => ({
-        ...prev,
-        [monthKey]: [...(prev[monthKey] || []), entry]
-      }));
-      setNewDodEntry({ date: '', startTime: '20:00', endTime: '23:00', notes: '' });
-    }
+    if (!newDodEntry.date || !newDodEntry.startTime || !newDodEntry.endTime) return;
+    
+    const [startH, startM] = newDodEntry.startTime.split(':').map(Number);
+    const [endH, endM] = newDodEntry.endTime.split(':').map(Number);
+    let hours = (endH + endM/60) - (startH + startM/60);
+    if (hours < 0) hours += 24;
+    
+    const entry = {
+      id: Date.now(),
+      date: newDodEntry.date,
+      startTime: newDodEntry.startTime,
+      endTime: newDodEntry.endTime,
+      hours: Math.round(hours * 100) / 100,
+      notes: newDodEntry.notes || ''
+    };
+    
+    const entryMonth = newDodEntry.date.substring(0, 7);
+    setDodMonthlyHours(prev => ({
+      ...prev,
+      [entryMonth]: [...(prev[entryMonth] || []), entry]
+    }));
+    setNewDodEntry({ date: '', startTime: '20:00', endTime: '23:00', notes: '' });
   };
 
   const removeDodEntry = (monthKey, entryId) => {
     setDodMonthlyHours(prev => ({
       ...prev,
-      [monthKey]: prev[monthKey].filter(e => e.id !== entryId)
+      [monthKey]: (prev[monthKey] || []).filter(e => e.id !== entryId)
     }));
   };
 
@@ -394,13 +359,14 @@ export default function DonScheduler() {
     return entries.reduce((sum, e) => sum + e.hours, 0);
   };
 
-  // Community Connections Functions
+  // Community Connections Functions (FEATURE 1)
+  const currentConnectionMonthKey = getMonthKey(selectedConnectionMonth.month, selectedConnectionMonth.year);
+
   const saveConnectionMonth = () => {
     if (newConnection.startDate && newConnection.dueDate && newConnection.communitySize) {
-      const monthKey = getMonthKey(selectedConnectionMonth.month, selectedConnectionMonth.year);
       setCommunityConnections(prev => ({
         ...prev,
-        [monthKey]: {
+        [currentConnectionMonthKey]: {
           startDate: newConnection.startDate,
           dueDate: newConnection.dueDate,
           communitySize: parseInt(newConnection.communitySize),
@@ -418,48 +384,12 @@ export default function DonScheduler() {
     });
   };
 
-  const getCurrentConnectionData = () => {
-    const monthKey = getMonthKey(selectedConnectionMonth.month, selectedConnectionMonth.year);
+  const getConnectionData = (monthKey) => {
     return communityConnections[monthKey];
   };
 
-  const toggleRLMEvent = (eventId) => {
-    setSelectedRLMEvents(prev => ({ ...prev, [eventId]: !prev[eventId] }));
-  };
-
-  const getMonthEvents = (month, year) => {
-    const key = `${year}-${String(month + 1).padStart(2, '0')}`;
-    const events = RLM_EVENTS_DATA[key] || [];
-    return events.map((event, idx) => ({
-      ...event,
-      id: `${key}-${idx}`,
-      selected: selectedRLMEvents[`${key}-${idx}`] ?? event.defaultSelected
-    }));
-  };
-
-  const getWeeksInMonth = (month, year) => {
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const weeks = [];
-    let currentDate = new Date(firstDay);
-    const dayOfWeek = currentDate.getDay();
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    currentDate.setDate(currentDate.getDate() + diff);
-    
-    while (currentDate <= lastDay || weeks.length < 1) {
-      const weekStart = new Date(currentDate);
-      const weekEnd = new Date(currentDate);
-      weekEnd.setDate(weekEnd.getDate() + 6);
-      weeks.push({ start: new Date(weekStart), end: new Date(weekEnd), weekNumber: weeks.length + 1 });
-      currentDate.setDate(currentDate.getDate() + 7);
-      if (weeks.length >= 6) break;
-    }
-    return weeks;
-  };
-
-  // Calculate community connections needed (updated for monthly data)
-  const getConnectionsInfo = () => {
-    const monthKey = getMonthKey(selectedConnectionMonth.month, selectedConnectionMonth.year);
+  // Calculate connection metrics for a month
+  const getConnectionMetrics = (monthKey) => {
     const data = communityConnections[monthKey];
     if (!data) return null;
     
@@ -467,96 +397,209 @@ export default function DonScheduler() {
     const start = new Date(startDate);
     const deadline = new Date(dueDate);
     const today = new Date();
-    const daysLeft = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
+    
     const totalDays = Math.ceil((deadline - start) / (1000 * 60 * 60 * 24));
-    const weeksLeft = Math.max(1, Math.ceil(daysLeft / 7));
-    const totalWeeks = Math.max(1, Math.ceil(totalDays / 7));
-    const dodShiftsPerWeek = dodShifts.length;
-    const totalDodShifts = Math.max(1, dodShiftsPerWeek * weeksLeft);
-    const connectionsPerShift = Math.ceil(communitySize / totalDodShifts);
+    const daysRemaining = Math.max(0, Math.ceil((deadline - today) / (1000 * 60 * 60 * 24)));
+    const weeksLeft = Math.max(1, Math.ceil(daysRemaining / 7));
+    const totalDodShifts = dodShifts.length * weeksLeft;
+    
+    const connectionsPerShift = totalDodShifts > 0 ? Math.ceil(communitySize / totalDodShifts) : communitySize;
     const connectionsPerWeek = Math.ceil(communitySize / weeksLeft);
     
-    return { 
-      total: communitySize, 
-      daysLeft: Math.max(0, daysLeft), 
-      weeksLeft, 
-      totalWeeks,
-      perWeek: connectionsPerWeek, 
-      perShift: connectionsPerShift, 
-      totalShifts: totalDodShifts,
+    return {
+      total: communitySize,
+      perWeek: connectionsPerWeek,
+      perShift: connectionsPerShift,
+      daysRemaining,
+      weeksLeft,
       startDate,
       dueDate
     };
   };
 
-  const countSelectedByCategory = (category) => {
-    return Object.entries(RLM_EVENTS_DATA).reduce((count, [monthKey, events]) => {
-      return count + events.filter((e, idx) => e.category === category && selectedRLMEvents[`${monthKey}-${idx}`]).length;
-    }, 0);
+  // FEATURE 3: Drag-and-Drop Block Functions
+  const handleBlockDragStart = (blockType) => {
+    setDraggedBlockType(blockType);
   };
 
-  // Calculate total don hours (updated to include monthly DOD hours)
-  const calculateDonHours = () => {
-    let hours = 0;
-    
-    // DOD weekly recurring (3h each per week)
-    hours += dodShifts.length * 3;
-    
-    // Meetings
-    Object.entries(meetings).forEach(([type, list]) => {
-      const mt = MEETING_TYPES.find(m => m.id === type);
-      hours += list.length * (mt?.duration || 1);
-    });
-    
-    // EB events (total hours / weeks in term \u2248 16 weeks)
-    const ebTotalHours = ebEvents.reduce((sum, e) => sum + e.hours, 0);
-    hours += ebTotalHours / 16;
-    
-    // BTE events
-    const bteTotalHours = bteEvents.reduce((sum, e) => sum + e.hours, 0);
-    hours += bteTotalHours / 16;
-    
-    // FNH (averaged)
-    const fnh = countSelectedByCategory('fnh');
-    hours += (fnh * 2) / 16;
-    
-    return Math.round(hours * 10) / 10;
+  const handleBlockDragEnd = () => {
+    setDraggedBlockType(null);
   };
 
-  // Calculate hours
-  const calculateWeeklyHours = () => {
-    let classHours = 0;
-    let donHours = calculateDonHours();
-    let mealHours = 3;
+  const handleBlockDrop = (dateStr, hour) => {
+    if (!draggedBlockType) return;
     
-    classes.forEach(cls => {
-      classHours += parseInt(cls.endTime) - parseInt(cls.startTime);
-    });
-    
-    return { classHours, donHours, mealHours: mealHours * 7, total: classHours + donHours + mealHours * 7 };
-  };
+    const blockConfig = DRAGGABLE_BLOCK_TYPES.find(b => b.id === draggedBlockType);
+    if (!blockConfig) return;
 
-  const calculateMonthlyHours = () => {
-    const weekly = calculateWeeklyHours();
-    return {
-      classHours: weekly.classHours * 4,
-      donHours: weekly.donHours * 4,
-      mealHours: weekly.mealHours * 4,
-      total: weekly.total * 4
+    const newBlock = {
+      id: Date.now(),
+      type: draggedBlockType,
+      name: blockConfig.name,
+      icon: blockConfig.icon,
+      color: blockConfig.color,
+      hours: blockConfig.defaultHours,
+      startHour: hour
     };
+
+    setScheduledBlocks(prev => ({
+      ...prev,
+      [dateStr]: [...(prev[dateStr] || []), newBlock]
+    }));
+    
+    setDraggedBlockType(null);
   };
 
-  const getEventColor = (category) => ({
-    meeting: '#9dd5c8', report: '#f5d5a0', fnh: '#e8b4c8', connection: '#c5b3d9',
-    admin: '#b8d4e8', academic: '#a8c5e2', event: '#c8e6c9', holiday: '#f0b8b8', break: '#f5e6a3',
-    'eb-open': '#ffd699', 'eb-close': '#ffd699', 'bte-open': '#d4b8e8', 'bte-close': '#d4b8e8',
-  }[category] || '#888');
+  const removeScheduledBlock = (dateStr, blockId) => {
+    setScheduledBlocks(prev => ({
+      ...prev,
+      [dateStr]: (prev[dateStr] || []).filter(b => b.id !== blockId)
+    }));
+  };
 
-  const formatHour = (h) => h === 12 ? '12 PM' : h > 12 ? `${h - 12} PM` : h === 0 ? '12 AM' : `${h} AM`;
-  const formatTime = (t) => { if (!t) return ''; const [h, m] = t.split(':').map(Number); const hour = h % 12 || 12; return `${hour}:${m.toString().padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
-  const formatDate = (dateStr) => { if (!dateStr) return ''; const d = new Date(dateStr); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
-  const formatFullDate = (dateStr) => { if (!dateStr) return ''; const d = new Date(dateStr); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
+  // FEATURE 4: Smart Time Distribution
+  const generateRecommendations = () => {
+    const monthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
+    const weeks = getWeeksInMonth(selectedMonth.month, selectedMonth.year);
+    const newRecs = [];
+    
+    // Analyze current schedule
+    const existingBlocksByDay = {};
+    weeks.forEach(week => {
+      for (let d = 0; d < 7; d++) {
+        const date = new Date(week.start);
+        date.setDate(date.getDate() + d);
+        if (date.getMonth() === selectedMonth.month) {
+          const dateStr = date.toISOString().split('T')[0];
+          const dayName = DAYS[d];
+          const blocks = scheduledBlocks[dateStr] || [];
+          const hasClass = classes.some(c => c.day === dayName);
+          const hasDod = dodShifts.includes(dayName);
+          existingBlocksByDay[dateStr] = { blocks, hasClass, hasDod, dayName, date };
+        }
+      }
+    });
 
+    // Find light days (fewer commitments)
+    const lightDays = Object.entries(existingBlocksByDay)
+      .filter(([_, info]) => !info.hasClass && !info.hasDod && info.blocks.length < 2)
+      .sort((a, b) => a[1].blocks.length - b[1].blocks.length)
+      .slice(0, 5);
+
+    // Recommend study time spread across the week
+    const studyDays = lightDays.filter((_, i) => i % 2 === 0).slice(0, 3);
+    studyDays.forEach(([dateStr, info]) => {
+      newRecs.push({
+        id: Date.now() + Math.random(),
+        type: 'study',
+        dateStr,
+        dayName: info.dayName,
+        message: `Add 2h Study Time on ${info.dayName} ${info.date.getDate()}`,
+        hours: 2,
+        startHour: 14
+      });
+    });
+
+    // Recommend social time
+    const socialDays = lightDays.filter((_, i) => i % 2 === 1).slice(0, 2);
+    socialDays.forEach(([dateStr, info]) => {
+      newRecs.push({
+        id: Date.now() + Math.random(),
+        type: 'social',
+        dateStr,
+        dayName: info.dayName,
+        message: `Add Social Time on ${info.dayName} ${info.date.getDate()}`,
+        hours: 2,
+        startHour: 19
+      });
+    });
+
+    // Recommend exercise on non-DOD days
+    const exerciseDays = Object.entries(existingBlocksByDay)
+      .filter(([_, info]) => !info.hasDod && !info.blocks.some(b => b.type === 'exercise'))
+      .slice(0, 3);
+    exerciseDays.forEach(([dateStr, info]) => {
+      newRecs.push({
+        id: Date.now() + Math.random(),
+        type: 'exercise',
+        dateStr,
+        dayName: info.dayName,
+        message: `Add Exercise on ${info.dayName} ${info.date.getDate()}`,
+        hours: 1,
+        startHour: 7
+      });
+    });
+
+    // Recommend personal time on weekends
+    const weekendDays = Object.entries(existingBlocksByDay)
+      .filter(([_, info]) => info.dayName === 'Saturday' || info.dayName === 'Sunday')
+      .slice(0, 2);
+    weekendDays.forEach(([dateStr, info]) => {
+      if (!info.blocks.some(b => b.type === 'personal')) {
+        newRecs.push({
+          id: Date.now() + Math.random(),
+          type: 'personal',
+          dateStr,
+          dayName: info.dayName,
+          message: `Add Personal Time on ${info.dayName} ${info.date.getDate()}`,
+          hours: 2,
+          startHour: 10
+        });
+      }
+    });
+
+    setRecommendations(newRecs.slice(0, 8));
+    setShowRecommendations(true);
+  };
+
+  const applyRecommendation = (rec) => {
+    const blockConfig = DRAGGABLE_BLOCK_TYPES.find(b => b.id === rec.type);
+    if (!blockConfig) return;
+
+    const newBlock = {
+      id: Date.now(),
+      type: rec.type,
+      name: blockConfig.name,
+      icon: blockConfig.icon,
+      color: blockConfig.color,
+      hours: rec.hours,
+      startHour: rec.startHour
+    };
+
+    setScheduledBlocks(prev => ({
+      ...prev,
+      [rec.dateStr]: [...(prev[rec.dateStr] || []), newBlock]
+    }));
+
+    setRecommendations(prev => prev.filter(r => r.id !== rec.id));
+  };
+
+  const applyAllRecommendations = () => {
+    recommendations.forEach(rec => {
+      const blockConfig = DRAGGABLE_BLOCK_TYPES.find(b => b.id === rec.type);
+      if (!blockConfig) return;
+
+      const newBlock = {
+        id: Date.now() + Math.random(),
+        type: rec.type,
+        name: blockConfig.name,
+        icon: blockConfig.icon,
+        color: blockConfig.color,
+        hours: rec.hours,
+        startHour: rec.startHour
+      };
+
+      setScheduledBlocks(prev => ({
+        ...prev,
+        [rec.dateStr]: [...(prev[rec.dateStr] || []), newBlock]
+      }));
+    });
+
+    setRecommendations([]);
+    setShowRecommendations(false);
+  };
+
+  // Navigation helpers (FEATURE 5)
   const navigateMonth = (direction) => {
     setSelectedMonth(prev => {
       let newMonth = prev.month + direction;
@@ -565,7 +608,6 @@ export default function DonScheduler() {
       if (newMonth < 0) { newMonth = 11; newYear--; }
       return { month: newMonth, year: newYear };
     });
-    setSelectedWeek(null);
   };
 
   const navigateDodMonth = (direction) => {
@@ -584,425 +626,573 @@ export default function DonScheduler() {
       let newYear = prev.year;
       if (newMonth > 11) { newMonth = 0; newYear++; }
       if (newMonth < 0) { newMonth = 11; newYear--; }
+      const newMonthKey = getMonthKey(newMonth, newYear);
+      const existing = communityConnections[newMonthKey];
+      if (existing) {
+        setNewConnection({
+          startDate: existing.startDate,
+          dueDate: existing.dueDate,
+          communitySize: existing.communitySize.toString()
+        });
+      } else {
+        setNewConnection({ startDate: '', dueDate: '', communitySize: '' });
+      }
       return { month: newMonth, year: newYear };
     });
-    // Update form with existing data if available
-    const newMonthKey = getMonthKey(
-      selectedConnectionMonth.month + direction > 11 ? 0 : selectedConnectionMonth.month + direction < 0 ? 11 : selectedConnectionMonth.month + direction,
-      selectedConnectionMonth.month + direction > 11 ? selectedConnectionMonth.year + 1 : selectedConnectionMonth.month + direction < 0 ? selectedConnectionMonth.year - 1 : selectedConnectionMonth.year
-    );
-    const existing = communityConnections[newMonthKey];
-    if (existing) {
-      setNewConnection({
-        startDate: existing.startDate,
-        dueDate: existing.dueDate,
-        communitySize: existing.communitySize.toString()
-      });
-    } else {
-      setNewConnection({ startDate: '', dueDate: '', communitySize: '' });
-    }
   };
 
-  const handleMealDragStart = (day, mealType) => { setDraggedMeal({ day, mealType }); };
-  const handleMealDrop = (day, hour) => {
-    if (!draggedMeal) return;
-    setWeeklyMeals(prev => ({
-      ...prev,
-      [day]: { ...prev[day], [draggedMeal.mealType]: { ...prev[day][draggedMeal.mealType], start: hour } }
-    }));
-    setDraggedMeal(null);
-  };
-
-  const monthEvents = getMonthEvents(selectedMonth.month, selectedMonth.year);
-  const weeksInMonth = getWeeksInMonth(selectedMonth.month, selectedMonth.year);
-  const monthlyHours = calculateMonthlyHours();
-  const weeklyHours = calculateWeeklyHours();
-  const connectionsInfo = getConnectionsInfo();
-  const currentDodMonthKey = getMonthKey(selectedDodMonth.month, selectedDodMonth.year);
-  const currentConnectionMonthKey = getMonthKey(selectedConnectionMonth.month, selectedConnectionMonth.year);
-
-  const generateCalendarDays = () => {
-    const firstDay = new Date(selectedMonth.year, selectedMonth.month, 1);
-    const lastDay = new Date(selectedMonth.year, selectedMonth.month + 1, 0);
-    const days = [];
-    let startDay = firstDay.getDay() - 1;
-    if (startDay < 0) startDay = 6;
-    for (let i = 0; i < startDay; i++) days.push({ day: null, events: [], classes: [] });
-    
-    for (let d = 1; d <= lastDay.getDate(); d++) {
-      const date = new Date(selectedMonth.year, selectedMonth.month, d);
-      const dayName = DAYS[date.getDay() === 0 ? 6 : date.getDay() - 1];
-      const dayClasses = classes.filter(c => c.day === dayName);
-      const dayEvents = monthEvents.filter(e => e.date === d && (e.selected || !e.selectable));
-      
-      // Check for EB/BTE events on this day
-      const dateStr = `${selectedMonth.year}-${String(selectedMonth.month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const ebOnDay = ebEvents.filter(e => e.date === dateStr);
-      const bteOnDay = bteEvents.filter(e => e.date === dateStr);
-      
-      // Check for DOD entries on this day
-      const monthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
-      const dodOnDay = (dodMonthlyHours[monthKey] || []).filter(e => e.date === dateStr);
-      
-      days.push({ day: d, events: dayEvents, classes: dayClasses, dayName, ebOnDay, bteOnDay, dodOnDay });
-    }
-    return days;
-  };
-
-  const calendarDays = generateCalendarDays();
-
-  const getDayBlocks = (dayName) => {
-    const blocks = [];
-    
-    classes.filter(c => c.day === dayName).forEach(cls => {
-      blocks.push({ type: 'class', name: cls.name, start: parseInt(cls.startTime), end: parseInt(cls.endTime), locked: true });
-    });
-
-    if (dodShifts.includes(dayName)) {
-      blocks.push({ type: 'dod', name: 'DOD', start: 20, end: 23, locked: true });
-    }
-
-    Object.entries(meetings).forEach(([type, list]) => {
-      list.filter(m => m.day === dayName).forEach(m => {
-        const [h] = m.time.split(':').map(Number);
-        const mt = MEETING_TYPES.find(t => t.id === type);
-        blocks.push({ type: 'meeting', name: mt?.name || type, start: h, end: h + (mt?.duration || 1), locked: true });
-      });
-    });
-
-    const meals = weeklyMeals[dayName];
-    if (meals) {
-      Object.entries(meals).forEach(([mealType, meal]) => {
-        blocks.push({ type: mealType, name: mealType.charAt(0).toUpperCase() + mealType.slice(1), start: meal.start, end: meal.start + meal.duration, locked: false });
-      });
-    }
-
-    return blocks.sort((a, b) => a.start - b.start);
-  };
-
-  // Get all saved connection months for display
-  const getSavedConnectionMonths = () => {
-    return Object.keys(communityConnections).sort();
-  };
-
-  // Get all DOD months with entries
+  // Get saved months for DOD hours
   const getSavedDodMonths = () => {
     return Object.keys(dodMonthlyHours).filter(key => dodMonthlyHours[key].length > 0).sort();
   };
 
+  // Get saved months for connections
+  const getSavedConnectionMonths = () => {
+    return Object.keys(communityConnections).sort();
+  };
+
+  // Excel parsing
+  const parseExcelFile = (file) => {
+    setUploadStatus('Processing...');
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        
+        const parsed = [];
+        json.slice(1).forEach(row => {
+          if (row.length >= 4) {
+            const name = row[0]?.toString().trim();
+            const dayStr = row[1]?.toString().trim();
+            const startStr = row[2]?.toString();
+            const endStr = row[3]?.toString();
+            
+            const day = normalizeDay(dayStr);
+            const startTime = parseTimeToHour(startStr);
+            const endTime = parseTimeToHour(endStr);
+            
+            if (name && day && startTime !== null && endTime !== null) {
+              parsed.push({ name, day, startTime, endTime });
+            }
+          }
+        });
+        
+        if (parsed.length > 0) {
+          setClasses(prev => [...prev, ...parsed]);
+          setUploadStatus(`Added ${parsed.length} classes`);
+        } else {
+          setUploadStatus('No valid classes found');
+        }
+      } catch (err) {
+        setUploadStatus('Error reading file');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleClassDrop = (e) => {
+    e.preventDefault();
+    setIsDraggingClass(false);
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv'))) {
+      parseExcelFile(file);
+    }
+  };
+
+  // Meal drag handlers
+  const handleMealDragStart = (day, mealType) => {
+    setDraggedMeal({ day, mealType });
+  };
+
+  const handleMealDrop = (day, hour) => {
+    if (draggedMeal) {
+      setWeeklyMeals(prev => ({
+        ...prev,
+        [draggedMeal.day]: {
+          ...prev[draggedMeal.day],
+          [draggedMeal.mealType]: { ...prev[draggedMeal.day][draggedMeal.mealType], start: hour }
+        }
+      }));
+      setDraggedMeal(null);
+    }
+  };
+
+  // Get blocks that appear in a specific week (for weekly view)
+  const getBlocksForWeek = (weekStart) => {
+    const blocks = [];
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(weekStart);
+      date.setDate(date.getDate() + d);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayBlocks = scheduledBlocks[dateStr] || [];
+      dayBlocks.forEach(block => {
+        blocks.push({ ...block, dayIndex: d, date });
+      });
+    }
+    return blocks;
+  };
+
+  // Calculate schedule data for month view
+  const getMonthlyCalendarData = () => {
+    const monthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
+    const firstDay = new Date(selectedMonth.year, selectedMonth.month, 1);
+    const lastDay = new Date(selectedMonth.year, selectedMonth.month + 1, 0);
+    const startPad = (firstDay.getDay() + 6) % 7;
+    
+    const days = [];
+    for (let i = 0; i < startPad; i++) {
+      days.push({ date: null, events: [] });
+    }
+    
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      const date = new Date(selectedMonth.year, selectedMonth.month, d);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayName = DAYS[(date.getDay() + 6) % 7];
+      const events = [];
+      
+      // Classes
+      classes.filter(c => c.day === dayName).forEach(c => {
+        events.push({ type: 'class', name: c.name, time: formatTime(c.startTime) });
+      });
+      
+      // DOD shifts (weekly)
+      if (dodShifts.includes(dayName)) {
+        events.push({ type: 'dod', name: 'DOD Shift', time: '8PM-11PM' });
+      }
+      
+      // DOD monthly entries
+      const dodEntries = (dodMonthlyHours[monthKey] || []).filter(e => e.date === dateStr);
+      dodEntries.forEach(e => {
+        events.push({ type: 'dod', name: `DOD (${e.hours}h)`, time: formatTimeRange(e.startTime, e.endTime) });
+      });
+      
+      // Meetings
+      Object.entries(meetings).forEach(([type, slots]) => {
+        slots.filter(s => s.day === dayName).forEach(() => {
+          events.push({ type: 'meeting', name: MEETING_TYPES.find(m => m.id === type)?.name || type });
+        });
+      });
+      
+      // RLM Events
+      const rlmEvents = RLM_EVENTS_DATA[monthKey] || [];
+      rlmEvents.filter(e => e.date === d).forEach(e => {
+        const eventId = `${monthKey}-${rlmEvents.indexOf(e)}`;
+        if (selectedRLMEvents[eventId] || !e.selectable) {
+          events.push({ type: e.category, name: e.title });
+        }
+      });
+      
+      // EB/BTE events
+      ebEvents.filter(e => e.date === dateStr).forEach(e => {
+        events.push({ type: 'eb', name: `EB #${e.windowNum}`, time: `${e.hours}h` });
+      });
+      bteEvents.filter(e => e.date === dateStr).forEach(e => {
+        events.push({ type: 'bte', name: `BTE #${e.windowNum}`, time: `${e.hours}h` });
+      });
+      
+      // Scheduled blocks (drag-and-drop)
+      const dayBlocks = scheduledBlocks[dateStr] || [];
+      dayBlocks.forEach(block => {
+        events.push({ 
+          type: block.type, 
+          name: `${block.icon} ${block.name}`, 
+          time: `${block.hours}h`,
+          blockId: block.id,
+          dateStr
+        });
+      });
+      
+      days.push({ date: d, dayName, dateStr, events });
+    }
+    
+    return days;
+  };
+
+  // Calculate hour totals
+  const calculateHourTotals = () => {
+    const monthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
+    const weeksInMonth = getWeeksInMonth(selectedMonth.month, selectedMonth.year).length;
+    
+    let classHours = 0;
+    classes.forEach(c => {
+      classHours += (c.endTime - c.startTime) * weeksInMonth;
+    });
+    
+    const dodWeeklyHours = dodShifts.length * 3 * weeksInMonth;
+    const dodMonthTotal = getDodMonthTotal(monthKey);
+    
+    let meetingHours = 0;
+    Object.entries(meetings).forEach(([type, slots]) => {
+      const meeting = MEETING_TYPES.find(m => m.id === type);
+      meetingHours += slots.length * (meeting?.duration || 1) * weeksInMonth;
+    });
+    
+    let rlmHours = 0;
+    const rlmEvents = RLM_EVENTS_DATA[monthKey] || [];
+    rlmEvents.forEach((event, idx) => {
+      const eventId = `${monthKey}-${idx}`;
+      if (selectedRLMEvents[eventId] && event.hours) {
+        rlmHours += event.hours;
+      }
+    });
+    
+    let ebHours = ebEvents.reduce((sum, e) => sum + e.hours, 0);
+    let bteHours = bteEvents.reduce((sum, e) => sum + e.hours, 0);
+    
+    // Calculate scheduled block hours
+    let scheduledHours = { social: 0, study: 0, personal: 0, exercise: 0, 'dod-extra': 0 };
+    Object.values(scheduledBlocks).forEach(blocks => {
+      blocks.forEach(block => {
+        if (scheduledHours[block.type] !== undefined) {
+          scheduledHours[block.type] += block.hours;
+        }
+      });
+    });
+    
+    return {
+      classes: classHours,
+      dodWeekly: dodWeeklyHours,
+      dodMonthly: dodMonthTotal,
+      meetings: meetingHours,
+      rlm: rlmHours,
+      eb: ebHours,
+      bte: bteHours,
+      scheduled: scheduledHours,
+      total: classHours + dodWeeklyHours + dodMonthTotal + meetingHours + rlmHours + ebHours + bteHours + 
+             Object.values(scheduledHours).reduce((a, b) => a + b, 0)
+    };
+  };
+
+  const hourTotals = calculateHourTotals();
+  const weeks = getWeeksInMonth(selectedMonth.month, selectedMonth.year);
+
+  // Styles
+  const styles = `
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); min-height: 100vh; color: #e4e4e7; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .header { text-align: center; margin-bottom: 30px; }
+    .header h1 { font-size: 2.5rem; background: linear-gradient(135deg, #a8c5e2, #9dd5c8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px; }
+    .header p { color: #9ca3af; font-size: 1.1rem; }
+    
+    .step-tabs { display: flex; gap: 8px; margin-bottom: 25px; flex-wrap: wrap; justify-content: center; }
+    .step-tab { padding: 10px 16px; border-radius: 20px; border: none; background: rgba(255,255,255,0.05); color: #9ca3af; cursor: pointer; transition: all 0.3s; font-size: 0.9rem; }
+    .step-tab:hover { background: rgba(255,255,255,0.1); }
+    .step-tab.active { background: linear-gradient(135deg, #a8c5e2, #86c5b8); color: #1a1a2e; font-weight: 600; }
+    .step-tab.completed { background: rgba(134, 197, 184, 0.2); color: #86c5b8; }
+    
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 25px; margin-bottom: 20px; }
+    .card h2 { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; font-size: 1.3rem; color: #e4e4e7; }
+    
+    .form-row { display: flex; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; align-items: flex-end; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 0.85rem; color: #9ca3af; }
+    .form-group input, .form-group select { padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: #e4e4e7; font-size: 0.95rem; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: #86c5b8; }
+    
+    .btn-primary { padding: 10px 20px; border-radius: 8px; border: none; background: linear-gradient(135deg, #86c5b8, #a8c5e2); color: #1a1a2e; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(134, 197, 184, 0.3); }
+    .btn-secondary { padding: 10px 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #e4e4e7; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 6px; }
+    .btn-secondary:hover { background: rgba(255,255,255,0.05); }
+    .btn-add { padding: 8px 16px; border-radius: 6px; border: none; background: rgba(134, 197, 184, 0.2); color: #86c5b8; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .btn-add:hover { background: rgba(134, 197, 184, 0.3); }
+    .btn-danger { padding: 6px 10px; border-radius: 6px; border: none; background: rgba(239, 68, 68, 0.2); color: #ef4444; cursor: pointer; }
+    .btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
+    
+    .tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+    .tag { padding: 8px 14px; border-radius: 20px; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; }
+    .tag button { background: none; border: none; cursor: pointer; opacity: 0.7; }
+    .tag button:hover { opacity: 1; }
+    
+    .upload-zone { border: 2px dashed rgba(255,255,255,0.1); border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.3s; }
+    .upload-zone:hover, .upload-zone.dragging { border-color: #86c5b8; background: rgba(134, 197, 184, 0.05); }
+    
+    .day-toggle { display: flex; flex-wrap: wrap; gap: 8px; }
+    .day-btn { padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #9ca3af; cursor: pointer; transition: all 0.3s; }
+    .day-btn:hover { background: rgba(255,255,255,0.05); }
+    .day-btn.selected { background: rgba(245, 213, 160, 0.2); border-color: #f5d5a0; color: #f5d5a0; }
+    
+    .nav-buttons { display: flex; gap: 12px; margin-top: 25px; }
+    
+    .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+    .month-nav h3 { font-size: 1.3rem; }
+    .month-nav button { padding: 8px 12px; border-radius: 8px; border: none; background: rgba(255,255,255,0.05); color: #e4e4e7; cursor: pointer; }
+    .month-nav button:hover { background: rgba(255,255,255,0.1); }
+    
+    .view-toggle { display: flex; gap: 8px; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 8px; }
+    .view-toggle button { padding: 8px 16px; border-radius: 6px; border: none; background: transparent; color: #9ca3af; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .view-toggle button.active { background: rgba(134, 197, 184, 0.2); color: #86c5b8; }
+    
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .calendar-header { padding: 10px; text-align: center; font-weight: 600; color: #9ca3af; font-size: 0.85rem; }
+    .calendar-day { min-height: 100px; background: rgba(255,255,255,0.02); border-radius: 8px; padding: 8px; border: 1px solid transparent; transition: all 0.2s; }
+    .calendar-day:hover { border-color: rgba(134, 197, 184, 0.3); }
+    .calendar-day.drop-target { border-color: #86c5b8; background: rgba(134, 197, 184, 0.1); }
+    .calendar-day .date { font-weight: 600; margin-bottom: 6px; color: #e4e4e7; }
+    .calendar-day .event { font-size: 0.7rem; padding: 3px 6px; border-radius: 4px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+    .calendar-day .event.removable { cursor: pointer; }
+    .calendar-day .event.removable:hover { opacity: 0.8; }
+    .calendar-day .event .remove-btn { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); display: none; background: rgba(0,0,0,0.3); border-radius: 50%; width: 14px; height: 14px; line-height: 14px; text-align: center; font-size: 10px; }
+    .calendar-day .event.removable:hover .remove-btn { display: block; }
+    .calendar-day.empty { background: transparent; min-height: auto; }
+    
+    .block-palette { display: flex; gap: 10px; flex-wrap: wrap; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 12px; margin-bottom: 20px; }
+    .block-palette-item { padding: 10px 16px; border-radius: 8px; cursor: grab; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; transition: all 0.2s; }
+    .block-palette-item:hover { transform: scale(1.05); }
+    .block-palette-item:active { cursor: grabbing; }
+    .block-palette-label { margin-right: auto; font-weight: 500; color: #9ca3af; }
+    
+    .recommendations-panel { background: rgba(255, 215, 0, 0.05); border: 1px solid rgba(255, 215, 0, 0.2); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    .recommendations-panel h3 { display: flex; align-items: center; gap: 8px; color: #ffd700; margin-bottom: 15px; }
+    .recommendation-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 8px; }
+    .recommendation-item .rec-text { display: flex; align-items: center; gap: 8px; }
+    .recommendation-item button { padding: 6px 12px; border-radius: 6px; border: none; background: rgba(134, 197, 184, 0.2); color: #86c5b8; cursor: pointer; }
+    .recommendation-item button:hover { background: rgba(134, 197, 184, 0.3); }
+    .rec-actions { display: flex; gap: 10px; margin-top: 15px; }
+    
+    .weekly-grid { display: grid; grid-template-columns: 60px repeat(7, 1fr); gap: 2px; background: rgba(255,255,255,0.02); border-radius: 12px; overflow: hidden; }
+    .weekly-header { padding: 12px 8px; text-align: center; font-weight: 600; background: rgba(255,255,255,0.05); font-size: 0.85rem; }
+    .weekly-time { padding: 8px; font-size: 0.75rem; color: #9ca3af; text-align: right; background: rgba(255,255,255,0.02); }
+    .weekly-cell { min-height: 35px; background: rgba(255,255,255,0.01); border: 1px solid transparent; transition: all 0.2s; position: relative; }
+    .weekly-cell:hover { border-color: rgba(134, 197, 184, 0.3); }
+    .weekly-cell.drop-target { border-color: #86c5b8; background: rgba(134, 197, 184, 0.1); }
+    .weekly-block { position: absolute; left: 2px; right: 2px; padding: 4px; border-radius: 4px; font-size: 0.7rem; overflow: hidden; z-index: 1; }
+    
+    .schedule-block { padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 4px; }
+    .schedule-block.draggable { cursor: grab; }
+    .schedule-block.locked { opacity: 0.8; }
+    
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin-bottom: 25px; }
+    .summary-item { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; text-align: center; }
+    .summary-item .label { font-size: 0.8rem; color: #9ca3af; margin-bottom: 5px; }
+    .summary-item .value { font-size: 1.4rem; font-weight: 700; }
+    
+    .month-folder { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 15px; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 12px; }
+    .month-folder:hover { background: rgba(255,255,255,0.05); border-color: rgba(134, 197, 184, 0.3); }
+    .month-folder.active { border-color: #86c5b8; background: rgba(134, 197, 184, 0.1); }
+    .month-folder-icon { font-size: 1.5rem; }
+    .month-folder-info { flex: 1; }
+    .month-folder-info h4 { margin-bottom: 4px; }
+    .month-folder-info p { font-size: 0.85rem; color: #9ca3af; }
+    
+    .dod-entry { display: flex; align-items: center; gap: 15px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 8px; }
+    .dod-entry-info { flex: 1; }
+    .dod-entry-info .date { font-weight: 600; }
+    .dod-entry-info .time { font-size: 0.85rem; color: #9ca3af; }
+    .dod-entry-info .notes { font-size: 0.8rem; color: #6b7280; font-style: italic; }
+    .dod-entry .hours { font-size: 1.2rem; font-weight: 700; color: #f5d5a0; }
+    
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; margin-top: 15px; }
+    .metric-card { background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; text-align: center; }
+    .metric-card .value { font-size: 1.5rem; font-weight: 700; color: #86c5b8; }
+    .metric-card .label { font-size: 0.75rem; color: #9ca3af; }
+    
+    .rlm-event-grid { display: grid; gap: 8px; max-height: 400px; overflow-y: auto; }
+    .rlm-event { display: flex; align-items: center; gap: 10px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; }
+    .rlm-event input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+    .rlm-event .event-info { flex: 1; }
+    .rlm-event .event-date { font-weight: 600; font-size: 0.9rem; }
+    .rlm-event .event-title { font-size: 0.85rem; color: #9ca3af; }
+    .rlm-event .event-hours { font-size: 0.8rem; color: #86c5b8; }
+    .rlm-event.disabled { opacity: 0.6; }
+    
+    .folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
+  `;
+
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 50%, #16213e 100%)', padding: 24, fontFamily: "'Inter', sans-serif", color: '#e0e0e0' }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        .glass-card { background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 20px; border: 1px solid rgba(255,255,255,0.06); padding: 28px; margin-bottom: 20px; }
-        .btn-primary { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: white; border: none; padding: 14px 26px; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: inherit; font-size: 15px; transition: all 0.3s; }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(59,130,246,0.3); }
-        .btn-secondary { background: rgba(255,255,255,0.06); color: white; border: 1px solid rgba(255,255,255,0.1); padding: 12px 22px; border-radius: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: inherit; font-size: 14px; transition: all 0.2s; }
-        .btn-secondary:hover { background: rgba(255,255,255,0.1); }
-        .btn-add { background: rgba(59,130,246,0.2); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); padding: 12px 16px; border-radius: 10px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: inherit; transition: all 0.2s; }
-        .btn-add:hover { background: rgba(59,130,246,0.3); }
-        .btn-danger { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 8px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px; }
-        .btn-danger:hover { background: rgba(239,68,68,0.25); }
-        .input-field { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 16px; color: white; font-family: inherit; font-size: 14px; width: 100%; }
-        .input-field:focus { outline: none; border-color: #3b82f6; background: rgba(255,255,255,0.08); }
-        .tag { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; margin: 4px; }
-        .tag button { background: none; border: none; color: inherit; cursor: pointer; opacity: 0.7; font-size: 16px; }
-        .tag.class { background: #a8c5e2; color: #2c3e50; }
-        .tag.dod { background: #f5d5a0; color: #5d4e37; }
-        .tag.meeting { background: #9dd5c8; color: #2d4a44; }
-        .tag.eb { background: #ffd699; color: #664400; }
-        .tag.bte { background: #d4b8e8; color: #4a2d5c; }
-        .upload-zone { border: 2px dashed rgba(255,255,255,0.15); border-radius: 16px; padding: 36px; text-align: center; cursor: pointer; transition: all 0.3s; }
-        .upload-zone:hover, .upload-zone.dragging { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
-        .nav-buttons { display: flex; justify-content: space-between; margin-top: 24px; gap: 12px; flex-wrap: wrap; }
-        .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-        h1 { font-family: 'Fraunces', serif; font-size: 38px; text-align: center; margin-bottom: 8px; background: linear-gradient(135deg, #fff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
-        .subtitle { text-align: center; opacity: 0.5; margin-bottom: 28px; font-size: 15px; }
-        .section-desc { opacity: 0.6; margin-bottom: 18px; font-size: 14px; }
-        
-        .step-tabs { display: flex; gap: 6px; margin-bottom: 24px; flex-wrap: wrap; justify-content: center; }
-        .step-tab { padding: 8px 14px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); cursor: pointer; font-family: inherit; font-weight: 500; font-size: 13px; color: rgba(255,255,255,0.6); transition: all 0.2s; }
-        .step-tab.active { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: white; border-color: transparent; }
-        .step-tab.completed { border-color: #34d399; color: #34d399; }
-        
-        .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-        .month-nav-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); width: 40px; height: 40px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; }
-        
-        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-        .calendar-header { text-align: center; font-weight: 600; font-size: 12px; padding: 10px 4px; color: rgba(255,255,255,0.5); }
-        .calendar-day { min-height: 85px; background: rgba(255,255,255,0.03); border-radius: 10px; padding: 5px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; overflow: hidden; }
-        .calendar-day:hover { background: rgba(255,255,255,0.06); }
-        .calendar-day.empty { background: transparent; cursor: default; }
-        .calendar-day-number { font-weight: 600; font-size: 12px; margin-bottom: 3px; }
-        .calendar-event { font-size: 8px; padding: 2px 4px; border-radius: 3px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-        
-        .hours-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin: 20px 0; }
-        .hours-card { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.06); }
-        .hours-value { font-size: 22px; font-weight: 700; }
-        .hours-label { font-size: 9px; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
-        
-        .week-card { background: rgba(255,255,255,0.04); border-radius: 14px; padding: 16px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.06); cursor: pointer; transition: all 0.2s; }
-        .week-card:hover { background: rgba(255,255,255,0.06); transform: translateY(-2px); }
-        
-        .event-select { display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
-        .event-select:hover { background: rgba(255,255,255,0.06); }
-        .event-select.selected { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.3); }
-        .event-checkbox { width: 20px; height: 20px; border-radius: 4px; border: 2px solid rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .event-checkbox.checked { background: #3b82f6; border-color: #3b82f6; }
-        
-        .schedule-grid { display: grid; grid-template-columns: 50px repeat(7, 1fr); gap: 2px; font-size: 11px; }
-        .schedule-header { padding: 8px 4px; text-align: center; font-weight: 600; font-size: 11px; background: rgba(255,255,255,0.05); border-radius: 6px; }
-        .schedule-time { padding: 4px; text-align: right; font-size: 10px; opacity: 0.5; height: 40px; display: flex; align-items: flex-start; justify-content: flex-end; }
-        .schedule-cell { height: 40px; background: rgba(255,255,255,0.02); border-radius: 4px; position: relative; }
-        .schedule-cell:hover { background: rgba(255,255,255,0.05); }
-        .schedule-block { position: absolute; left: 2px; right: 2px; border-radius: 4px; padding: 3px 5px; font-size: 10px; font-weight: 500; overflow: hidden; display: flex; align-items: center; gap: 4px; z-index: 1; }
-        .schedule-block.locked { cursor: default; }
-        .schedule-block.draggable { cursor: grab; }
-        
-        .window-card { background: rgba(255,255,255,0.04); border-radius: 14px; padding: 18px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.08); }
-        .window-card h4 { margin: 0 0 12px 0; display: flex; align-items: center; gap: 10px; font-size: 16px; }
-        .window-dates { display: flex; gap: 20px; margin-bottom: 14px; font-size: 13px; }
-        .window-dates span { opacity: 0.7; }
-        .window-dates strong { color: #60a5fa; }
-        
-        .month-folder { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.08); cursor: pointer; transition: all 0.2s; }
-        .month-folder:hover { background: rgba(255,255,255,0.06); }
-        .month-folder.active { border-color: rgba(59,130,246,0.5); background: rgba(59,130,246,0.1); }
-        
-        .dod-entry { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(245,213,160,0.1); border-radius: 10px; margin-bottom: 8px; }
-        
-        .hidden-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-      `}</style>
+    <div className="container">
+      <style>{styles}</style>
+      
+      <div className="header">
+        <h1>🎓 Don Schedule Manager</h1>
+        <p>Plan your weekly commitments & monthly hours</p>
+      </div>
 
-      <input type="file" ref={classInputRef} className="hidden-input" accept=".xlsx,.xls,.csv" onChange={handleClassFileSelect} />
-
-      <h1>Don Schedule Manager</h1>
-      <p className="subtitle">Plan your month \u2022 Track your hours \u2022 Balance your life</p>
-
+      {/* Step Navigation */}
       <div className="step-tabs">
         <button className={`step-tab ${step === 1 ? 'active' : classes.length > 0 ? 'completed' : ''}`} onClick={() => setStep(1)}>Classes</button>
         <button className={`step-tab ${step === 2 ? 'active' : dodShifts.length > 0 ? 'completed' : ''}`} onClick={() => setStep(2)}>DOD Weekly</button>
         <button className={`step-tab ${step === 'dod-monthly' ? 'active' : Object.keys(dodMonthlyHours).length > 0 ? 'completed' : ''}`} onClick={() => setStep('dod-monthly')}>DOD Hours</button>
-        <button className={`step-tab ${step === 3 ? 'active' : ''}`} onClick={() => setStep(3)}>Meetings</button>
+        <button className={`step-tab ${step === 3 ? 'active' : Object.values(meetings).some(m => m.length > 0) ? 'completed' : ''}`} onClick={() => setStep(3)}>Meetings</button>
         <button className={`step-tab ${step === 4 ? 'active' : ''}`} onClick={() => setStep(4)}>RLM Events</button>
         <button className={`step-tab ${step === 5 ? 'active' : ebEvents.length > 0 || bteEvents.length > 0 ? 'completed' : ''}`} onClick={() => setStep(5)}>EB & BTE</button>
-        <button className={`step-tab ${step === 6 ? 'active' : Object.keys(communityConnections).length > 0 ? 'completed' : ''}`} onClick={() => setStep(6)}>Connections</button>
+        <button className={`step-tab ${step === 'connections' ? 'active' : Object.keys(communityConnections).length > 0 ? 'completed' : ''}`} onClick={() => setStep('connections')}>Connections</button>
         <button className={`step-tab ${step === 7 ? 'active' : ''}`} onClick={() => setStep(7)}>Schedule</button>
       </div>
 
       {/* Step 1: Classes */}
       {step === 1 && (
-        <div className="glass-card" style={{ maxWidth: 800, margin: '0 auto' }}>
+        <div className="card">
           <h2><BookOpen size={24} /> Class Schedule</h2>
-          <p className="section-desc">Upload from Excel/CSV or add manually</p>
           
           <div className={`upload-zone ${isDraggingClass ? 'dragging' : ''}`} onClick={() => classInputRef.current?.click()} onDragOver={(e) => { e.preventDefault(); setIsDraggingClass(true); }} onDragLeave={() => setIsDraggingClass(false)} onDrop={handleClassDrop} style={{ marginBottom: 20 }}>
-            <FileSpreadsheet size={36} style={{ opacity: 0.4, marginBottom: 10 }} />
-            <div style={{ fontSize: 15, fontWeight: 500 }}>Upload Excel or CSV</div>
-            <div style={{ fontSize: 12, opacity: 0.5 }}>Day | Start Time | End Time | Course</div>
+            <Upload size={32} style={{ marginBottom: 10, opacity: 0.5 }} />
+            <p>Drop Excel/CSV file or click to upload</p>
+            <p style={{ fontSize: '0.8rem', color: '#9ca3af', marginTop: 5 }}>Format: Class Name, Day, Start Time, End Time</p>
+            <input ref={classInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={(e) => e.target.files[0] && parseExcelFile(e.target.files[0])} />
           </div>
-
-          {uploadStatus && (
-            <div style={{ padding: 14, background: uploadStatus.startsWith('\u2713') ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', borderRadius: 10, marginBottom: 16, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-              {uploadStatus.startsWith('\u2713') ? <Check size={16} style={{ color: '#34d399' }} /> : <AlertCircle size={16} style={{ color: '#fbbf24' }} />}
-              {uploadStatus}
-            </div>
-          )}
+          {uploadStatus && <p style={{ marginBottom: 15, color: '#86c5b8' }}>{uploadStatus}</p>}
           
-          <div style={{ padding: 18, background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 18 }}>
-            <div style={{ fontWeight: 600, marginBottom: 14, fontSize: 14 }}>Or Add Manually</div>
+          <div style={{ marginBottom: 20 }}>
+            <h3 style={{ marginBottom: 15, fontSize: '1rem' }}>Or add manually:</h3>
             <div className="form-row">
-              <input className="input-field" placeholder="Class name" value={newClass.name} onChange={e => setNewClass({ ...newClass, name: e.target.value })} style={{ flex: 1 }} />
-              <select className="input-field" value={newClass.day} onChange={e => setNewClass({ ...newClass, day: e.target.value })} style={{ width: 'auto' }}>
-                {DAYS.map(d => <option key={d}>{d}</option>)}
-              </select>
-            </div>
-            <div className="form-row" style={{ marginBottom: 0 }}>
-              <select className="input-field" value={newClass.startTime} onChange={e => setNewClass({ ...newClass, startTime: e.target.value })} style={{ width: 'auto' }}>
-                {HOURS.slice(0,-1).map(h => <option key={h} value={h}>{formatHour(h)}</option>)}
-              </select>
-              <span style={{ opacity: 0.5 }}>to</span>
-              <select className="input-field" value={newClass.endTime} onChange={e => setNewClass({ ...newClass, endTime: e.target.value })} style={{ width: 'auto' }}>
-                {HOURS.slice(1).map(h => <option key={h} value={h}>{formatHour(h)}</option>)}
-              </select>
-              <button className="btn-add" onClick={addClass}><Plus size={18} /></button>
+              <div className="form-group">
+                <label>Class Name</label>
+                <input type="text" value={newClass.name} onChange={(e) => setNewClass({ ...newClass, name: e.target.value })} placeholder="e.g., PSYCH 101" />
+              </div>
+              <div className="form-group">
+                <label>Day</label>
+                <select value={newClass.day} onChange={(e) => setNewClass({ ...newClass, day: e.target.value })}>
+                  {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Start</label>
+                <select value={newClass.startTime} onChange={(e) => setNewClass({ ...newClass, startTime: e.target.value })}>
+                  {HOURS.map(h => <option key={h} value={h}>{formatTime(h)}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>End</label>
+                <select value={newClass.endTime} onChange={(e) => setNewClass({ ...newClass, endTime: e.target.value })}>
+                  {HOURS.map(h => <option key={h} value={h}>{formatTime(h)}</option>)}
+                </select>
+              </div>
+              <button className="btn-add" onClick={() => { if (newClass.name) { setClasses([...classes, { ...newClass, startTime: parseInt(newClass.startTime), endTime: parseInt(newClass.endTime) }]); setNewClass({ name: '', day: 'Monday', startTime: '9', endTime: '10' }); } }}><Plus size={18} /> Add</button>
             </div>
           </div>
           
           {classes.length > 0 && (
-            <div>
-              <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 14, display: 'flex', justifyContent: 'space-between' }}>
-                <span>Classes ({classes.length})</span>
-                <button onClick={() => setClasses([])} style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Clear</button>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-                {classes.map(cls => (
-                  <span key={cls.id} className="tag class">
-                    {cls.name} \u2022 {cls.day.slice(0,3)} {formatHour(parseInt(cls.startTime))}-{formatHour(parseInt(cls.endTime))}
-                    <button onClick={() => setClasses(classes.filter(c => c.id !== cls.id))}>\u00d7</button>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          <div className="nav-buttons">
-            <div></div>
-            <button className="btn-primary" onClick={() => setStep(2)}>Continue <ChevronRight size={20} /></button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 2: DOD Weekly Recurring */}
-      {step === 2 && (
-        <div className="glass-card" style={{ maxWidth: 800, margin: '0 auto' }}>
-          <h2><Clock size={24} /> DOD Weekly Shifts</h2>
-          <p className="section-desc">Which nights do you typically have Don On Duty? (~3h each, 8-11pm)</p>
-          
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-            <select className="input-field" value={newDodDay} onChange={e => setNewDodDay(e.target.value)} style={{ flex: 1 }}>
-              {DAYS.map(d => <option key={d}>{d}</option>)}
-            </select>
-            <button className="btn-add" onClick={() => { if (!dodShifts.includes(newDodDay)) setDodShifts([...dodShifts, newDodDay]); }}><Plus size={18} /> Add</button>
-          </div>
-          
-          {dodShifts.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-              {dodShifts.map(day => (
-                <span key={day} className="tag dod">{day}<button onClick={() => setDodShifts(dodShifts.filter(d => d !== day))}>\u00d7</button></span>
+            <div className="tag-list">
+              {classes.map((c, i) => (
+                <div key={i} className="tag" style={{ background: BLOCK_COLORS.class.bg, color: BLOCK_COLORS.class.text }}>
+                  {c.name} - {c.day} {formatTime(c.startTime)}-{formatTime(c.endTime)}
+                  <button onClick={() => setClasses(classes.filter((_, idx) => idx !== i))}><X size={14} /></button>
+                </div>
               ))}
             </div>
           )}
-
-          <div style={{ marginTop: 20, padding: 16, background: 'rgba(245,213,160,0.1)', borderRadius: 12 }}>
-            <Target size={18} style={{ color: '#f5d5a0' }} /> <strong>Weekly DOD: {dodShifts.length * 3}h</strong> ({dodShifts.length} shifts)
-          </div>
-
-          <div style={{ marginTop: 16, padding: 14, background: 'rgba(59,130,246,0.1)', borderRadius: 10, fontSize: 13 }}>
-            <strong>\ud83d\udca1 Tip:</strong> Use "DOD Hours" tab to track actual hours for each month with specific dates.
-          </div>
           
           <div className="nav-buttons">
-            <button className="btn-secondary" onClick={() => setStep(1)}><ChevronLeft size={20} /> Back</button>
-            <button className="btn-primary" onClick={() => setStep('dod-monthly')}>Continue <ChevronRight size={20} /></button>
+            <button className="btn-primary" onClick={() => setStep(2)}>Next: DOD Shifts <ChevronRight size={20} /></button>
           </div>
         </div>
       )}
 
-      {/* DOD Monthly Hours - NEW */}
-      {step === 'dod-monthly' && (
-        <div className="glass-card" style={{ maxWidth: 900, margin: '0 auto' }}>
-          <h2><Clock size={24} /> DOD Monthly Hours</h2>
-          <p className="section-desc">Track your actual Don On Duty hours by month with flexible dates and times</p>
-
-          <div className="month-nav">
-            <button className="month-nav-btn" onClick={() => navigateDodMonth(-1)}><ArrowLeft size={18} /></button>
-            <h3 style={{ margin: 0 }}>{MONTHS[selectedDodMonth.month]} {selectedDodMonth.year}</h3>
-            <button className="month-nav-btn" onClick={() => navigateDodMonth(1)}><ArrowRight size={18} /></button>
+      {/* Step 2: DOD Weekly Shifts */}
+      {step === 2 && (
+        <div className="card">
+          <h2><Clock size={24} /> DOD Weekly Shifts</h2>
+          <p style={{ marginBottom: 20, color: '#9ca3af' }}>Select your regular weekly DOD days (8PM-11PM)</p>
+          
+          <div className="day-toggle">
+            {DAYS.map(day => (
+              <button key={day} className={`day-btn ${dodShifts.includes(day) ? 'selected' : ''}`} onClick={() => setDodShifts(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])}>
+                {day.slice(0, 3)}
+              </button>
+            ))}
           </div>
+          
+          {dodShifts.length > 0 && (
+            <p style={{ marginTop: 15, color: '#f5d5a0' }}>
+              Weekly DOD: {dodShifts.length * 3} hours ({dodShifts.length} shifts × 3h)
+            </p>
+          )}
+          
+          <div className="nav-buttons">
+            <button className="btn-secondary" onClick={() => setStep(1)}><ChevronLeft size={20} /> Back</button>
+            <button className="btn-primary" onClick={() => setStep('dod-monthly')}>Next: DOD Hours <ChevronRight size={20} /></button>
+          </div>
+        </div>
+      )}
 
-          {/* Add new DOD entry */}
-          <div style={{ padding: 18, background: 'rgba(245,213,160,0.1)', borderRadius: 12, marginBottom: 20, border: '1px solid rgba(245,213,160,0.2)' }}>
-            <div style={{ fontWeight: 600, marginBottom: 14, fontSize: 14 }}>Add DOD Shift</div>
+      {/* FEATURE 2: DOD Monthly Hours */}
+      {step === 'dod-monthly' && (
+        <div className="card">
+          <h2><Clock size={24} /> DOD Monthly Hours</h2>
+          <p style={{ marginBottom: 20, color: '#9ca3af' }}>Track your actual DOD hours for each month (flexible dates & times)</p>
+          
+          {/* Month Navigation */}
+          <div className="month-nav">
+            <button onClick={() => navigateDodMonth(-1)}><ArrowLeft size={20} /></button>
+            <h3>{MONTHS[selectedDodMonth.month]} {selectedDodMonth.year}</h3>
+            <button onClick={() => navigateDodMonth(1)}><ArrowRight size={20} /></button>
+          </div>
+          
+          {/* Add Entry Form */}
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: 20, borderRadius: 12, marginBottom: 20 }}>
+            <h4 style={{ marginBottom: 15 }}>Add DOD Shift</h4>
             <div className="form-row">
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display: 'block' }}>Date</label>
-                <input 
-                  type="date" 
-                  className="input-field" 
-                  value={newDodEntry.date}
-                  onChange={e => setNewDodEntry({ ...newDodEntry, date: e.target.value })}
-                />
+              <div className="form-group">
+                <label>Date</label>
+                <input type="date" value={newDodEntry.date} onChange={(e) => setNewDodEntry({ ...newDodEntry, date: e.target.value })} />
               </div>
-              <div style={{ width: 120 }}>
-                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display: 'block' }}>Start Time</label>
-                <input 
-                  type="time" 
-                  className="input-field" 
-                  value={newDodEntry.startTime}
-                  onChange={e => setNewDodEntry({ ...newDodEntry, startTime: e.target.value })}
-                />
+              <div className="form-group">
+                <label>Start Time</label>
+                <input type="time" value={newDodEntry.startTime} onChange={(e) => setNewDodEntry({ ...newDodEntry, startTime: e.target.value })} />
               </div>
-              <div style={{ width: 120 }}>
-                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display: 'block' }}>End Time</label>
-                <input 
-                  type="time" 
-                  className="input-field" 
-                  value={newDodEntry.endTime}
-                  onChange={e => setNewDodEntry({ ...newDodEntry, endTime: e.target.value })}
-                />
+              <div className="form-group">
+                <label>End Time</label>
+                <input type="time" value={newDodEntry.endTime} onChange={(e) => setNewDodEntry({ ...newDodEntry, endTime: e.target.value })} />
               </div>
-            </div>
-            <div className="form-row" style={{ marginBottom: 0 }}>
-              <input 
-                className="input-field" 
-                placeholder="Notes (optional)" 
-                value={newDodEntry.notes}
-                onChange={e => setNewDodEntry({ ...newDodEntry, notes: e.target.value })}
-                style={{ flex: 1 }}
-              />
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Notes (optional)</label>
+                <input type="text" value={newDodEntry.notes} onChange={(e) => setNewDodEntry({ ...newDodEntry, notes: e.target.value })} placeholder="e.g., Covered for Alex" />
+              </div>
               <button className="btn-add" onClick={addDodEntry}><Plus size={18} /> Add</button>
             </div>
           </div>
-
-          {/* DOD entries for current month */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>
+          
+          {/* Entries List */}
+          <div>
+            <h4 style={{ marginBottom: 15, display: 'flex', alignItems: 'center', gap: 10 }}>
               {MONTHS[selectedDodMonth.month]} Shifts ({(dodMonthlyHours[currentDodMonthKey] || []).length})
-            </div>
+            </h4>
             
             {(dodMonthlyHours[currentDodMonthKey] || []).length === 0 ? (
-              <div style={{ padding: 30, textAlign: 'center', opacity: 0.5, background: 'rgba(255,255,255,0.03)', borderRadius: 12 }}>
-                No DOD shifts recorded for this month
-              </div>
+              <p style={{ color: '#9ca3af', fontStyle: 'italic' }}>No shifts recorded for this month</p>
             ) : (
-              (dodMonthlyHours[currentDodMonthKey] || []).map(entry => (
-                <div key={entry.id} className="dod-entry">
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{formatFullDate(entry.date)}</div>
-                    <div style={{ fontSize: 13, opacity: 0.7 }}>
-                      {formatTime(entry.startTime)} - {formatTime(entry.endTime)} \u2022 <strong>{entry.hours}h</strong>
-                      {entry.notes && <span> \u2022 {entry.notes}</span>}
+              <>
+                {(dodMonthlyHours[currentDodMonthKey] || []).map(entry => (
+                  <div key={entry.id} className="dod-entry">
+                    <div className="dod-entry-info">
+                      <div className="date">{new Date(entry.date + 'T00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+                      <div className="time">{formatTimeRange(entry.startTime, entry.endTime)}</div>
+                      {entry.notes && <div className="notes">{entry.notes}</div>}
                     </div>
+                    <div className="hours">{entry.hours}h</div>
+                    <button className="btn-danger" onClick={() => removeDodEntry(currentDodMonthKey, entry.id)}>
+                      <Trash2 size={16} />
+                    </button>
                   </div>
-                  <button className="btn-danger" onClick={() => removeDodEntry(currentDodMonthKey, entry.id)}>
-                    <Trash2 size={14} />
-                  </button>
+                ))}
+                
+                <div style={{ marginTop: 20, padding: 15, background: 'rgba(245, 213, 160, 0.1)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 600 }}>Month Total:</span>
+                  <span style={{ fontSize: 24, fontWeight: 700, color: '#f5d5a0' }}>{getDodMonthTotal(currentDodMonthKey).toFixed(1)}h</span>
                 </div>
-              ))
+              </>
             )}
           </div>
-
-          {/* Monthly total */}
-          <div style={{ padding: 16, background: 'linear-gradient(135deg, rgba(245,213,160,0.15), rgba(245,213,160,0.05))', borderRadius: 12, marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600 }}>{MONTHS[selectedDodMonth.month]} Total</span>
-              <span style={{ fontSize: 24, fontWeight: 700, color: '#f5d5a0' }}>{getDodMonthTotal(currentDodMonthKey).toFixed(1)}h</span>
-            </div>
-          </div>
-
-          {/* Saved months overview */}
+          
+          {/* All Months Overview */}
           {getSavedDodMonths().length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>All Months with DOD Hours</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ marginTop: 30 }}>
+              <h4 style={{ marginBottom: 15 }}>All Recorded Months</h4>
+              <div className="folder-grid">
                 {getSavedDodMonths().map(monthKey => {
                   const [year, month] = monthKey.split('-').map(Number);
                   const total = getDodMonthTotal(monthKey);
                   return (
-                    <div 
-                      key={monthKey}
-                      onClick={() => setSelectedDodMonth({ month: month - 1, year })}
-                      className={`month-folder ${currentDodMonthKey === monthKey ? 'active' : ''}`}
-                      style={{ minWidth: 140 }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Folder size={16} style={{ color: '#f5d5a0' }} />
-                        <span style={{ fontWeight: 500 }}>{MONTHS[month - 1]} {year}</span>
+                    <div key={monthKey} className={`month-folder ${monthKey === currentDodMonthKey ? 'active' : ''}`} onClick={() => setSelectedDodMonth({ month: month - 1, year })}>
+                      <div className="month-folder-icon">📋</div>
+                      <div className="month-folder-info">
+                        <h4>{MONTHS[month - 1]} {year}</h4>
+                        <p>{total.toFixed(1)} hours</p>
                       </div>
-                      <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>{total.toFixed(1)} hours</div>
                     </div>
                   );
                 })}
@@ -1012,355 +1202,260 @@ export default function DonScheduler() {
           
           <div className="nav-buttons">
             <button className="btn-secondary" onClick={() => setStep(2)}><ChevronLeft size={20} /> Back</button>
-            <button className="btn-primary" onClick={() => setStep(3)}>Continue <ChevronRight size={20} /></button>
+            <button className="btn-primary" onClick={() => setStep(3)}>Next: Meetings <ChevronRight size={20} /></button>
           </div>
         </div>
       )}
 
       {/* Step 3: Meetings */}
       {step === 3 && (
-        <div className="glass-card" style={{ maxWidth: 800, margin: '0 auto' }}>
-          <h2><Users size={24} /> Meetings</h2>
-          <p className="section-desc">Add your recurring meetings</p>
+        <div className="card">
+          <h2><Users size={24} /> Regular Meetings</h2>
           
-          <div style={{ padding: 18, background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 20 }}>
-            <div className="form-row" style={{ marginBottom: 0 }}>
-              <select className="input-field" value={newMeeting.type} onChange={e => setNewMeeting({ ...newMeeting, type: e.target.value })} style={{ flex: 1 }}>
-                {MEETING_TYPES.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-              <select className="input-field" value={newMeeting.day} onChange={e => setNewMeeting({ ...newMeeting, day: e.target.value })} style={{ width: 'auto' }}>
-                {DAYS.map(d => <option key={d}>{d}</option>)}
-              </select>
-              <input type="time" className="input-field" value={newMeeting.time} onChange={e => setNewMeeting({ ...newMeeting, time: e.target.value })} style={{ width: 110 }} />
-              <button className="btn-add" onClick={addMeeting}><Plus size={18} /></button>
-            </div>
-          </div>
-
-          {MEETING_TYPES.map(mt => (
-            <div key={mt.id} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{mt.name} <span style={{ opacity: 0.5, fontWeight: 400 }}>({mt.frequency})</span></div>
-              {meetings[mt.id].length > 0 ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-                  {meetings[mt.id].map(m => (
-                    <span key={m.id} className="tag meeting" style={{ background: mt.color }}>
-                      {m.day} @ {formatTime(m.time)}
-                      <button onClick={() => setMeetings(prev => ({ ...prev, [mt.id]: prev[mt.id].filter(x => x.id !== m.id) }))}>\u00d7</button>
-                    </span>
+          {MEETING_TYPES.map(meeting => (
+            <div key={meeting.id} style={{ marginBottom: 25, padding: 15, background: 'rgba(255,255,255,0.02)', borderRadius: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div>
+                  <h3 style={{ fontSize: '1rem' }}>{meeting.name}</h3>
+                  <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{meeting.frequency} • {meeting.duration}h</span>
+                </div>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: meeting.color }}></div>
+              </div>
+              
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Day</label>
+                  <select value={newMeeting.type === meeting.id ? newMeeting.day : 'Monday'} onChange={(e) => setNewMeeting({ type: meeting.id, day: e.target.value, time: newMeeting.time })}>
+                    {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Time</label>
+                  <input type="time" value={newMeeting.type === meeting.id ? newMeeting.time : '19:00'} onChange={(e) => setNewMeeting({ type: meeting.id, day: newMeeting.day, time: e.target.value })} />
+                </div>
+                <button className="btn-add" onClick={() => { setMeetings(prev => ({ ...prev, [meeting.id]: [...prev[meeting.id], { day: newMeeting.day, time: newMeeting.time }] })); }}>
+                  <Plus size={18} /> Add
+                </button>
+              </div>
+              
+              {meetings[meeting.id].length > 0 && (
+                <div className="tag-list">
+                  {meetings[meeting.id].map((m, i) => (
+                    <div key={i} className="tag" style={{ background: meeting.color, color: '#1a1a2e' }}>
+                      {m.day} @ {m.time}
+                      <button onClick={() => setMeetings(prev => ({ ...prev, [meeting.id]: prev[meeting.id].filter((_, idx) => idx !== i) }))}><X size={14} /></button>
+                    </div>
                   ))}
                 </div>
-              ) : <div style={{ fontSize: 13, opacity: 0.5 }}>None added</div>}
+              )}
             </div>
           ))}
           
           <div className="nav-buttons">
             <button className="btn-secondary" onClick={() => setStep('dod-monthly')}><ChevronLeft size={20} /> Back</button>
-            <button className="btn-primary" onClick={() => setStep(4)}>Continue <ChevronRight size={20} /></button>
+            <button className="btn-primary" onClick={() => setStep(4)}>Next: RLM Events <ChevronRight size={20} /></button>
           </div>
         </div>
       )}
 
       {/* Step 4: RLM Events */}
       {step === 4 && (
-        <div className="glass-card" style={{ maxWidth: 900, margin: '0 auto' }}>
-          <h2><CalendarDays size={24} /> RLM Events</h2>
-          <p className="section-desc">Select which FNH, meetings, and events you're assigned to</p>
+        <div className="card">
+          <h2><Calendar size={24} /> RLM Calendar Events</h2>
+          <p style={{ marginBottom: 20, color: '#9ca3af' }}>Select optional events you'll attend (required events auto-selected)</p>
           
           <div className="month-nav">
-            <button className="month-nav-btn" onClick={() => navigateMonth(-1)}><ArrowLeft size={18} /></button>
-            <h3 style={{ margin: 0 }}>{MONTHS[selectedMonth.month]} {selectedMonth.year}</h3>
-            <button className="month-nav-btn" onClick={() => navigateMonth(1)}><ArrowRight size={18} /></button>
+            <button onClick={() => setSelectedMonth(prev => ({ ...prev, month: prev.month === 0 ? 11 : prev.month - 1, year: prev.month === 0 ? prev.year - 1 : prev.year }))}><ArrowLeft size={20} /></button>
+            <h3>{MONTHS[selectedMonth.month]} {selectedMonth.year}</h3>
+            <button onClick={() => setSelectedMonth(prev => ({ ...prev, month: prev.month === 11 ? 0 : prev.month + 1, year: prev.month === 11 ? prev.year + 1 : prev.year }))}><ArrowRight size={20} /></button>
           </div>
-
-          {monthEvents.filter(e => e.selectable).length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>No selectable events this month</div>
-          ) : (
-            monthEvents.filter(e => e.selectable).map(event => (
-              <div key={event.id} className={`event-select ${event.selected ? 'selected' : ''}`} onClick={() => toggleRLMEvent(event.id)}>
-                <div className={`event-checkbox ${event.selected ? 'checked' : ''}`}>{event.selected && <Check size={14} />}</div>
-                <div style={{ width: 50, fontWeight: 600, color: getEventColor(event.category) }}>{MONTHS[selectedMonth.month].slice(0,3)} {event.date}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500 }}>{event.title}</div>
-                  <div style={{ fontSize: 12, opacity: 0.6 }}>{event.hours || 1}h</div>
+          
+          <div className="rlm-event-grid">
+            {(RLM_EVENTS_DATA[getMonthKey(selectedMonth.month, selectedMonth.year)] || []).map((event, idx) => {
+              const eventId = `${getMonthKey(selectedMonth.month, selectedMonth.year)}-${idx}`;
+              return (
+                <div key={eventId} className={`rlm-event ${!event.selectable ? 'disabled' : ''}`}>
+                  <input type="checkbox" checked={selectedRLMEvents[eventId] || false} disabled={!event.selectable} onChange={(e) => setSelectedRLMEvents(prev => ({ ...prev, [eventId]: e.target.checked }))} />
+                  <div className="event-info">
+                    <div className="event-date">{MONTHS[selectedMonth.month]} {event.date}</div>
+                    <div className="event-title">{event.title}</div>
+                    {event.hours && <div className="event-hours">{event.hours}h</div>}
+                  </div>
                 </div>
-              </div>
-            ))
-          )}
-
-          <div style={{ padding: 14, background: 'rgba(59,130,246,0.1)', borderRadius: 12, marginTop: 20 }}>
-            <strong>Selected:</strong> {countSelectedByCategory('fnh')} FNH \u2022 {countSelectedByCategory('meeting')} Meetings \u2022 {countSelectedByCategory('event')} Events
+              );
+            })}
           </div>
           
           <div className="nav-buttons">
             <button className="btn-secondary" onClick={() => setStep(3)}><ChevronLeft size={20} /> Back</button>
-            <button className="btn-primary" onClick={() => setStep(5)}>Continue <ChevronRight size={20} /></button>
+            <button className="btn-primary" onClick={() => setStep(5)}>Next: EB & BTE <ChevronRight size={20} /></button>
           </div>
         </div>
       )}
 
       {/* Step 5: EB & BTE */}
       {step === 5 && (
-        <div className="glass-card" style={{ maxWidth: 900, margin: '0 auto' }}>
-          <h2><Package size={24} /> EB & BTE Events</h2>
-          <p className="section-desc">Plan when you'll do your Event-in-the-Box (EB) and Bring-to-Event (BTE)</p>
+        <div className="card">
+          <h2><Target size={24} /> EB & BTE Events</h2>
+          <p style={{ marginBottom: 20, color: '#9ca3af' }}>Plan your Educational Bulletin and Behind the Ears events</p>
           
-          {/* EB Section */}
-          <div className="window-card" style={{ borderColor: 'rgba(255,214,153,0.3)' }}>
-            <h4><Star size={20} style={{ color: '#ffd699' }} /> Event-in-the-Box (EB)</h4>
-            
+          {/* EB Events */}
+          <div style={{ marginBottom: 30 }}>
+            <h3 style={{ marginBottom: 15, color: BLOCK_COLORS.eb.bg }}>📋 Educational Bulletins</h3>
             {ebWindows.map(window => (
-              <div key={window.num} style={{ marginBottom: 16, padding: 14, background: 'rgba(255,214,153,0.1)', borderRadius: 10 }}>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>EB #{window.num}</div>
-                <div className="window-dates">
-                  <span>Opens: <strong>{window.openStr}</strong></span>
-                  <span>Closes: <strong>{window.closeStr}</strong></span>
+              <div key={window.num} style={{ padding: 15, background: 'rgba(255,214,153,0.1)', borderRadius: 10, marginBottom: 15 }}>
+                <div style={{ marginBottom: 10 }}>
+                  <strong>EB #{window.num}</strong>
+                  <span style={{ marginLeft: 10, fontSize: '0.85rem', color: '#9ca3af' }}>{window.openStr} - {window.closeStr}</span>
                 </div>
-                
-                {ebEvents.filter(e => e.windowNum === window.num).length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', marginBottom: 10 }}>
-                    {ebEvents.filter(e => e.windowNum === window.num).map(e => (
-                      <span key={e.id} className="tag eb">
-                        {formatDate(e.date)} \u2022 {e.hours}h
-                        <button onClick={() => setEbEvents(ebEvents.filter(x => x.id !== e.id))}>\u00d7</button>
-                      </span>
-                    ))}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Date</label>
+                    <input type="date" value={newEB.windowNum === window.num ? newEB.date : ''} onChange={(e) => setNewEB({ windowNum: window.num, date: e.target.value, hours: 2 })} min={window.openDate.toISOString().split('T')[0]} max={window.closeDate.toISOString().split('T')[0]} />
                   </div>
-                ) : null}
-                
-                <div className="form-row" style={{ marginBottom: 0 }}>
-                  <input 
-                    type="date" 
-                    className="input-field" 
-                    value={newEB.windowNum === window.num ? newEB.date : ''} 
-                    onChange={e => setNewEB({ ...newEB, windowNum: window.num, date: e.target.value })}
-                    min={window.openDate.toISOString().split('T')[0]}
-                    max={window.closeDate.toISOString().split('T')[0]}
-                    style={{ flex: 1 }}
-                  />
-                  <input 
-                    type="number" 
-                    className="input-field" 
-                    placeholder="Hours" 
-                    value={newEB.windowNum === window.num ? newEB.hours : 2}
-                    onChange={e => setNewEB({ ...newEB, windowNum: window.num, hours: parseInt(e.target.value) || 0 })}
-                    min="1" max="10"
-                    style={{ width: 80 }}
-                  />
-                  <button className="btn-add" onClick={() => { setNewEB({ ...newEB, windowNum: window.num }); addEBEvent(); }}><Plus size={18} /></button>
+                  <div className="form-group">
+                    <label>Hours</label>
+                    <input type="number" value={newEB.windowNum === window.num ? newEB.hours : 2} onChange={(e) => setNewEB({ ...newEB, hours: parseFloat(e.target.value) })} min="0.5" max="4" step="0.5" style={{ width: 80 }} />
+                  </div>
+                  <button className="btn-add" onClick={() => { if (newEB.date && newEB.windowNum === window.num) { setEbEvents(prev => [...prev, { ...newEB }]); setNewEB({ windowNum: 1, date: '', hours: 2 }); } }}>
+                    <Plus size={18} /> Add
+                  </button>
                 </div>
+                {ebEvents.filter(e => e.windowNum === window.num).map((event, i) => (
+                  <div key={i} className="tag" style={{ background: BLOCK_COLORS.eb.bg, color: BLOCK_COLORS.eb.text, marginTop: 10 }}>
+                    {new Date(event.date + 'T00:00').toLocaleDateString()} - {event.hours}h
+                    <button onClick={() => setEbEvents(prev => prev.filter((_, idx) => idx !== i))}><X size={14} /></button>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-
-          {/* BTE Section */}
-          <div className="window-card" style={{ borderColor: 'rgba(212,184,232,0.3)' }}>
-            <h4><Star size={20} style={{ color: '#d4b8e8' }} /> Bring-to-Event (BTE)</h4>
-            
+          
+          {/* BTE Events */}
+          <div>
+            <h3 style={{ marginBottom: 15, color: BLOCK_COLORS.bte.bg }}>👂 Behind the Ears</h3>
             {bteWindows.map(window => (
-              <div key={window.num} style={{ marginBottom: 16, padding: 14, background: 'rgba(212,184,232,0.1)', borderRadius: 10 }}>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>BTE #{window.num}</div>
-                <div className="window-dates">
-                  <span>Opens: <strong>{window.openStr}</strong></span>
-                  <span>Closes: <strong>{window.closeStr}</strong></span>
+              <div key={window.num} style={{ padding: 15, background: 'rgba(212,184,232,0.1)', borderRadius: 10, marginBottom: 15 }}>
+                <div style={{ marginBottom: 10 }}>
+                  <strong>BTE #{window.num}</strong>
+                  <span style={{ marginLeft: 10, fontSize: '0.85rem', color: '#9ca3af' }}>{window.openStr} - {window.closeStr}</span>
                 </div>
-                
-                {bteEvents.filter(e => e.windowNum === window.num).length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', marginBottom: 10 }}>
-                    {bteEvents.filter(e => e.windowNum === window.num).map(e => (
-                      <span key={e.id} className="tag bte">
-                        {formatDate(e.date)} \u2022 {e.hours}h
-                        <button onClick={() => setBteEvents(bteEvents.filter(x => x.id !== e.id))}>\u00d7</button>
-                      </span>
-                    ))}
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Date</label>
+                    <input type="date" value={newBTE.windowNum === window.num ? newBTE.date : ''} onChange={(e) => setNewBTE({ windowNum: window.num, date: e.target.value, hours: 2 })} min={window.openDate.toISOString().split('T')[0]} max={window.closeDate.toISOString().split('T')[0]} />
                   </div>
-                ) : null}
-                
-                <div className="form-row" style={{ marginBottom: 0 }}>
-                  <input 
-                    type="date" 
-                    className="input-field" 
-                    value={newBTE.windowNum === window.num ? newBTE.date : ''} 
-                    onChange={e => setNewBTE({ ...newBTE, windowNum: window.num, date: e.target.value })}
-                    min={window.openDate.toISOString().split('T')[0]}
-                    max={window.closeDate.toISOString().split('T')[0]}
-                    style={{ flex: 1 }}
-                  />
-                  <input 
-                    type="number" 
-                    className="input-field" 
-                    placeholder="Hours" 
-                    value={newBTE.windowNum === window.num ? newBTE.hours : 2}
-                    onChange={e => setNewBTE({ ...newBTE, windowNum: window.num, hours: parseInt(e.target.value) || 0 })}
-                    min="1" max="10"
-                    style={{ width: 80 }}
-                  />
-                  <button className="btn-add" onClick={() => { setNewBTE({ ...newBTE, windowNum: window.num }); addBTEEvent(); }}><Plus size={18} /></button>
+                  <div className="form-group">
+                    <label>Hours</label>
+                    <input type="number" value={newBTE.windowNum === window.num ? newBTE.hours : 2} onChange={(e) => setNewBTE({ ...newBTE, hours: parseFloat(e.target.value) })} min="0.5" max="4" step="0.5" style={{ width: 80 }} />
+                  </div>
+                  <button className="btn-add" onClick={() => { if (newBTE.date && newBTE.windowNum === window.num) { setBteEvents(prev => [...prev, { ...newBTE }]); setNewBTE({ windowNum: 1, date: '', hours: 2 }); } }}>
+                    <Plus size={18} /> Add
+                  </button>
                 </div>
+                {bteEvents.filter(e => e.windowNum === window.num).map((event, i) => (
+                  <div key={i} className="tag" style={{ background: BLOCK_COLORS.bte.bg, color: BLOCK_COLORS.bte.text, marginTop: 10 }}>
+                    {new Date(event.date + 'T00:00').toLocaleDateString()} - {event.hours}h
+                    <button onClick={() => setBteEvents(prev => prev.filter((_, idx) => idx !== i))}><X size={14} /></button>
+                  </div>
+                ))}
               </div>
             ))}
-          </div>
-
-          {/* Summary */}
-          <div style={{ padding: 16, background: 'rgba(59,130,246,0.1)', borderRadius: 12, marginTop: 10 }}>
-            <strong>Total Hours from EB & BTE:</strong>
-            <div style={{ display: 'flex', gap: 20, marginTop: 8 }}>
-              <span style={{ color: '#ffd699' }}>EB: {ebEvents.reduce((sum, e) => sum + e.hours, 0)}h ({ebEvents.length} events)</span>
-              <span style={{ color: '#d4b8e8' }}>BTE: {bteEvents.reduce((sum, e) => sum + e.hours, 0)}h ({bteEvents.length} events)</span>
-            </div>
           </div>
           
           <div className="nav-buttons">
             <button className="btn-secondary" onClick={() => setStep(4)}><ChevronLeft size={20} /> Back</button>
-            <button className="btn-primary" onClick={() => setStep(6)}>Continue <ChevronRight size={20} /></button>
+            <button className="btn-primary" onClick={() => setStep('connections')}>Next: Connections <ChevronRight size={20} /></button>
           </div>
         </div>
       )}
 
-      {/* Step 6: Community Connections - RLM Aligned */}
-      {step === 6 && (
-        <div className="glass-card" style={{ maxWidth: 900, margin: '0 auto' }}>
+      {/* FEATURE 1: Community Connections (RLM) */}
+      {step === 'connections' && (
+        <div className="card">
           <h2><Users size={24} /> Community Connections (RLM)</h2>
-          <p className="section-desc">Track your 1:1 connections with residents by month - aligned with the Residence Learning Model</p>
-
-          {/* Month navigation */}
+          <p style={{ marginBottom: 20, color: '#9ca3af' }}>Track your community connections by month with start/due dates</p>
+          
+          {/* Month Navigation */}
           <div className="month-nav">
-            <button className="month-nav-btn" onClick={() => navigateConnectionMonth(-1)}><ArrowLeft size={18} /></button>
-            <h3 style={{ margin: 0 }}>{MONTHS[selectedConnectionMonth.month]} {selectedConnectionMonth.year}</h3>
-            <button className="month-nav-btn" onClick={() => navigateConnectionMonth(1)}><ArrowRight size={18} /></button>
+            <button onClick={() => navigateConnectionMonth(-1)}><ArrowLeft size={20} /></button>
+            <h3>{MONTHS[selectedConnectionMonth.month]} {selectedConnectionMonth.year}</h3>
+            <button onClick={() => navigateConnectionMonth(1)}><ArrowRight size={20} /></button>
           </div>
-
-          {/* Current month form */}
-          <div style={{ padding: 20, background: 'linear-gradient(135deg, rgba(197,179,217,0.15), rgba(139,92,246,0.1))', border: '1px solid rgba(197,179,217,0.3)', borderRadius: 14, marginBottom: 20 }}>
-            <div style={{ fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Folder size={18} style={{ color: '#c5b3d9' }} />
-              {MONTHS[selectedConnectionMonth.month]} {selectedConnectionMonth.year} Community Connections
-            </div>
-
+          
+          {/* Connection Form */}
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: 20, borderRadius: 12, marginBottom: 20 }}>
+            <h4 style={{ marginBottom: 15 }}>{communityConnections[currentConnectionMonthKey] ? 'Update' : 'Set'} Connection Goal</h4>
             <div className="form-row">
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 6, display: 'block' }}>Start Date</label>
-                <input 
-                  className="input-field" 
-                  type="date" 
-                  value={communityConnections[currentConnectionMonthKey]?.startDate || newConnection.startDate} 
-                  onChange={e => setNewConnection({ ...newConnection, startDate: e.target.value })}
-                />
+              <div className="form-group">
+                <label>Start Date</label>
+                <input type="date" value={newConnection.startDate} onChange={(e) => setNewConnection({ ...newConnection, startDate: e.target.value })} />
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 6, display: 'block' }}>Due Date</label>
-                <input 
-                  className="input-field" 
-                  type="date" 
-                  value={communityConnections[currentConnectionMonthKey]?.dueDate || newConnection.dueDate} 
-                  onChange={e => setNewConnection({ ...newConnection, dueDate: e.target.value })}
-                />
+              <div className="form-group">
+                <label>Due Date</label>
+                <input type="date" value={newConnection.dueDate} onChange={(e) => setNewConnection({ ...newConnection, dueDate: e.target.value })} />
               </div>
-            </div>
-
-            <div className="form-row" style={{ marginBottom: 16 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 6, display: 'block' }}>How many people are in your community?</label>
-                <input 
-                  className="input-field" 
-                  type="number" 
-                  placeholder="e.g., 40 residents" 
-                  value={communityConnections[currentConnectionMonthKey]?.communitySize || newConnection.communitySize} 
-                  onChange={e => setNewConnection({ ...newConnection, communitySize: e.target.value })}
-                />
+              <div className="form-group">
+                <label>Community Size (# people)</label>
+                <input type="number" value={newConnection.communitySize} onChange={(e) => setNewConnection({ ...newConnection, communitySize: e.target.value })} placeholder="e.g., 40" min="1" />
               </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 12 }}>
               <button className="btn-add" onClick={saveConnectionMonth}>
-                <Check size={18} /> {communityConnections[currentConnectionMonthKey] ? 'Update' : 'Save'} Month
+                <Check size={18} /> {communityConnections[currentConnectionMonthKey] ? 'Update' : 'Save'}
               </button>
               {communityConnections[currentConnectionMonthKey] && (
                 <button className="btn-danger" onClick={() => deleteConnectionMonth(currentConnectionMonthKey)}>
-                  <Trash2 size={14} /> Delete
+                  <Trash2 size={16} />
                 </button>
               )}
             </div>
           </div>
-
-          {/* Connection calculations */}
-          {communityConnections[currentConnectionMonthKey] && (
-            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 20, marginBottom: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <Target size={24} style={{ color: '#c5b3d9' }} />
-                <div>
-                  <div style={{ fontSize: 20, fontWeight: 700 }}>{communityConnections[currentConnectionMonthKey].communitySize} Connections</div>
-                  <div style={{ fontSize: 13, opacity: 0.7 }}>
-                    {formatFullDate(communityConnections[currentConnectionMonthKey].startDate)} \u2192 {formatFullDate(communityConnections[currentConnectionMonthKey].dueDate)}
+          
+          {/* Connection Metrics */}
+          {communityConnections[currentConnectionMonthKey] && (() => {
+            const metrics = getConnectionMetrics(currentConnectionMonthKey);
+            if (!metrics) return null;
+            return (
+              <div style={{ background: 'rgba(134, 197, 184, 0.1)', padding: 20, borderRadius: 12, marginBottom: 20 }}>
+                <h4 style={{ marginBottom: 15, color: '#86c5b8' }}>📊 Connection Targets</h4>
+                <div className="metrics-grid">
+                  <div className="metric-card">
+                    <div className="value">{metrics.total}</div>
+                    <div className="label">Total People</div>
+                  </div>
+                  <div className="metric-card">
+                    <div className="value">{metrics.perWeek}</div>
+                    <div className="label">Per Week</div>
+                  </div>
+                  <div className="metric-card">
+                    <div className="value">{metrics.perShift}</div>
+                    <div className="label">Per DOD Shift</div>
+                  </div>
+                  <div className="metric-card">
+                    <div className="value">{metrics.daysRemaining}</div>
+                    <div className="label">Days Left</div>
                   </div>
                 </div>
+                <p style={{ marginTop: 15, fontSize: '0.85rem', color: '#9ca3af' }}>
+                  Period: {new Date(metrics.startDate).toLocaleDateString()} → {new Date(metrics.dueDate).toLocaleDateString()}
+                </p>
               </div>
-              
-              {(() => {
-                const data = communityConnections[currentConnectionMonthKey];
-                const start = new Date(data.startDate);
-                const deadline = new Date(data.dueDate);
-                const today = new Date();
-                const daysLeft = Math.max(0, Math.ceil((deadline - today) / (1000 * 60 * 60 * 24)));
-                const weeksLeft = Math.max(1, Math.ceil(daysLeft / 7));
-                const totalDodShifts = Math.max(1, dodShifts.length * weeksLeft);
-                const perWeek = Math.ceil(data.communitySize / weeksLeft);
-                const perShift = Math.ceil(data.communitySize / totalDodShifts);
-                
-                return (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                      <div style={{ background: 'rgba(255,255,255,0.1)', padding: 14, borderRadius: 10, textAlign: 'center' }}>
-                        <div style={{ fontSize: 22, fontWeight: 700, color: '#c5b3d9' }}>{perWeek}</div>
-                        <div style={{ fontSize: 11, opacity: 0.7 }}>per week</div>
-                      </div>
-                      <div style={{ background: 'rgba(255,255,255,0.1)', padding: 14, borderRadius: 10, textAlign: 'center' }}>
-                        <div style={{ fontSize: 22, fontWeight: 700, color: '#f5d5a0' }}>{perShift}</div>
-                        <div style={{ fontSize: 11, opacity: 0.7 }}>per DOD shift</div>
-                      </div>
-                      <div style={{ background: 'rgba(255,255,255,0.1)', padding: 14, borderRadius: 10, textAlign: 'center' }}>
-                        <div style={{ fontSize: 22, fontWeight: 700 }}>{daysLeft}</div>
-                        <div style={{ fontSize: 11, opacity: 0.7 }}>days left</div>
-                      </div>
-                    </div>
-
-                    {dodShifts.length > 0 && (
-                      <div style={{ marginTop: 16, padding: 12, background: 'rgba(245,213,160,0.15)', borderRadius: 8, fontSize: 13 }}>
-                        <strong>\ud83d\udca1 Tip:</strong> Do {perShift} connections each DOD shift ({dodShifts.join(', ')})!
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* All saved months */}
+            );
+          })()}
+          
+          {/* All Saved Connection Months */}
           {getSavedConnectionMonths().length > 0 && (
-            <div style={{ marginTop: 20 }}>
-              <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>All Saved Months</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+            <div style={{ marginTop: 30 }}>
+              <h4 style={{ marginBottom: 15 }}>All Connection Periods</h4>
+              <div className="folder-grid">
                 {getSavedConnectionMonths().map(monthKey => {
                   const [year, month] = monthKey.split('-').map(Number);
                   const data = communityConnections[monthKey];
                   return (
-                    <div 
-                      key={monthKey}
-                      onClick={() => {
-                        setSelectedConnectionMonth({ month: month - 1, year });
-                        setNewConnection({
-                          startDate: data.startDate,
-                          dueDate: data.dueDate,
-                          communitySize: data.communitySize.toString()
-                        });
-                      }}
-                      className={`month-folder ${currentConnectionMonthKey === monthKey ? 'active' : ''}`}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        <Folder size={16} style={{ color: '#c5b3d9' }} />
-                        <span style={{ fontWeight: 600 }}>{MONTHS[month - 1]} {year}</span>
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.7 }}>
-                        <div>{data.communitySize} people</div>
-                        <div>Due: {formatDate(data.dueDate)}</div>
+                    <div key={monthKey} className={`month-folder ${monthKey === currentConnectionMonthKey ? 'active' : ''}`} onClick={() => { setSelectedConnectionMonth({ month: month - 1, year }); setNewConnection({ startDate: data.startDate, dueDate: data.dueDate, communitySize: data.communitySize.toString() }); }}>
+                      <Folder size={24} />
+                      <div className="month-folder-info">
+                        <h4>{MONTHS[month - 1]} {year}</h4>
+                        <p>{data.communitySize} people • Due: {new Date(data.dueDate).toLocaleDateString()}</p>
                       </div>
                     </div>
                   );
@@ -1371,210 +1466,234 @@ export default function DonScheduler() {
           
           <div className="nav-buttons">
             <button className="btn-secondary" onClick={() => setStep(5)}><ChevronLeft size={20} /> Back</button>
-            <button className="btn-primary" onClick={() => setStep(7)}>View Schedule <ChevronRight size={20} /></button>
+            <button className="btn-primary" onClick={() => setStep(7)}>Generate Schedule <ChevronRight size={20} /></button>
           </div>
         </div>
       )}
 
-      {/* Step 7: Schedule View */}
+      {/* Step 7: Schedule View (FEATURES 3, 4, 5) */}
       {step === 7 && (
-        <div className="glass-card" style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-            <h2><Calendar size={24} /> My Schedule</h2>
-            {selectedWeek !== null && (
-              <button className="btn-secondary" onClick={() => setSelectedWeek(null)}><ArrowLeft size={16} /> Month</button>
-            )}
+        <div className="card">
+          <h2><CalendarDays size={24} /> Your Schedule</h2>
+          
+          {/* Hour Summary */}
+          <div className="summary-grid">
+            <div className="summary-item">
+              <div className="label">Classes</div>
+              <div className="value" style={{ color: BLOCK_COLORS.class.bg }}>{hourTotals.classes}h</div>
+            </div>
+            <div className="summary-item">
+              <div className="label">DOD (Weekly)</div>
+              <div className="value" style={{ color: BLOCK_COLORS.dod.bg }}>{hourTotals.dodWeekly}h</div>
+            </div>
+            <div className="summary-item">
+              <div className="label">DOD (Month)</div>
+              <div className="value" style={{ color: '#f5d5a0' }}>{hourTotals.dodMonthly}h</div>
+            </div>
+            <div className="summary-item">
+              <div className="label">Meetings</div>
+              <div className="value" style={{ color: BLOCK_COLORS.meeting.bg }}>{hourTotals.meetings}h</div>
+            </div>
+            <div className="summary-item">
+              <div className="label">RLM</div>
+              <div className="value" style={{ color: '#e8b4c8' }}>{hourTotals.rlm}h</div>
+            </div>
+            <div className="summary-item">
+              <div className="label">Scheduled</div>
+              <div className="value" style={{ color: '#86c5b8' }}>{Object.values(hourTotals.scheduled).reduce((a, b) => a + b, 0)}h</div>
+            </div>
+            <div className="summary-item" style={{ background: 'rgba(134, 197, 184, 0.1)' }}>
+              <div className="label">Total</div>
+              <div className="value">{hourTotals.total}h</div>
+            </div>
           </div>
-
-          <div className="month-nav">
-            <button className="month-nav-btn" onClick={() => { navigateMonth(-1); setSelectedWeek(null); }}><ArrowLeft size={18} /></button>
-            <h3 style={{ margin: 0 }}>{MONTHS[selectedMonth.month]} {selectedMonth.year}</h3>
-            <button className="month-nav-btn" onClick={() => { navigateMonth(1); setSelectedWeek(null); }}><ArrowRight size={18} /></button>
-          </div>
-
-          {/* Hours Summary */}
-          <div className="hours-summary">
-            <div className="hours-card">
-              <div className="hours-value" style={{ color: '#a8c5e2' }}>{selectedWeek === null ? monthlyHours.classHours : weeklyHours.classHours}h</div>
-              <div className="hours-label">Classes</div>
-            </div>
-            <div className="hours-card">
-              <div className="hours-value" style={{ color: '#f5d5a0' }}>{getDodMonthTotal(getMonthKey(selectedMonth.month, selectedMonth.year)).toFixed(1)}h</div>
-              <div className="hours-label">DOD (Month)</div>
-            </div>
-            <div className="hours-card">
-              <div className="hours-value" style={{ color: '#ffd699' }}>{ebEvents.reduce((s, e) => s + e.hours, 0)}h</div>
-              <div className="hours-label">EB</div>
-            </div>
-            <div className="hours-card">
-              <div className="hours-value" style={{ color: '#d4b8e8' }}>{bteEvents.reduce((s, e) => s + e.hours, 0)}h</div>
-              <div className="hours-label">BTE</div>
-            </div>
-            <div className="hours-card" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1))' }}>
-              <div className="hours-value" style={{ background: 'linear-gradient(135deg, #60a5fa, #c084fc)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                {(weeklyHours.donHours + ebEvents.reduce((s, e) => s + e.hours, 0) / 16 + bteEvents.reduce((s, e) => s + e.hours, 0) / 16).toFixed(1)}h
+          
+          {/* FEATURE 3: Block Palette for Drag-and-Drop */}
+          <div className="block-palette">
+            <span className="block-palette-label">Drag blocks to calendar:</span>
+            {DRAGGABLE_BLOCK_TYPES.map(block => (
+              <div key={block.id} className="block-palette-item" style={{ background: block.color.bg, color: block.color.text }} draggable onDragStart={() => handleBlockDragStart(block.id)} onDragEnd={handleBlockDragEnd}>
+                <span>{block.icon}</span>
+                <span>{block.name}</span>
+                <span style={{ opacity: 0.7, fontSize: '0.8rem' }}>{block.defaultHours}h</span>
               </div>
-              <div className="hours-label">Avg/Week</div>
-            </div>
+            ))}
           </div>
-
-          {/* Connection info for current schedule month */}
-          {(() => {
-            const scheduleMonthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
-            const connectionData = communityConnections[scheduleMonthKey];
-            if (connectionData && dodShifts.length > 0) {
-              const deadline = new Date(connectionData.dueDate);
-              const today = new Date();
-              const daysLeft = Math.max(0, Math.ceil((deadline - today) / (1000 * 60 * 60 * 24)));
-              const weeksLeft = Math.max(1, Math.ceil(daysLeft / 7));
-              const perShift = Math.ceil(connectionData.communitySize / Math.max(1, dodShifts.length * weeksLeft));
-              
-              return (
-                <div style={{ padding: 10, background: 'rgba(197,179,217,0.1)', borderRadius: 10, marginBottom: 20, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Users size={16} style={{ color: '#c5b3d9' }} />
-                  <span><strong>Connections:</strong> ~{perShift} during each DOD shift ({connectionData.communitySize} total, due {formatDate(connectionData.dueDate)})</span>
-                </div>
-              );
-            }
-            return null;
-          })()}
-
-          {selectedWeek === null ? (
-            <>
-              <div className="calendar-grid" style={{ marginBottom: 24 }}>
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-                  <div key={day} className="calendar-header">{day}</div>
-                ))}
-                {calendarDays.map((dayData, idx) => (
-                  <div key={idx} className={`calendar-day ${!dayData.day ? 'empty' : ''}`}>
-                    {dayData.day && (
-                      <>
-                        <div className="calendar-day-number">{dayData.day}</div>
-                        {dayData.classes.slice(0, 1).map((cls, i) => (
-                          <div key={i} className="calendar-event" style={{ background: BLOCK_COLORS.class.bg, color: BLOCK_COLORS.class.text }}>{cls.name}</div>
-                        ))}
-                        {dayData.dayName && dodShifts.includes(dayData.dayName) && (
-                          <div className="calendar-event" style={{ background: BLOCK_COLORS.dod.bg, color: BLOCK_COLORS.dod.text }}>DOD</div>
-                        )}
-                        {dayData.dodOnDay?.map((e, i) => (
-                          <div key={i} className="calendar-event" style={{ background: BLOCK_COLORS.dod.bg, color: BLOCK_COLORS.dod.text }}>DOD {e.hours}h</div>
-                        ))}
-                        {dayData.ebOnDay?.map((e, i) => (
-                          <div key={i} className="calendar-event" style={{ background: BLOCK_COLORS.eb.bg, color: BLOCK_COLORS.eb.text }}>EB {e.hours}h</div>
-                        ))}
-                        {dayData.bteOnDay?.map((e, i) => (
-                          <div key={i} className="calendar-event" style={{ background: BLOCK_COLORS.bte.bg, color: BLOCK_COLORS.bte.text }}>BTE {e.hours}h</div>
-                        ))}
-                        {dayData.events.filter(e => e.category === 'fnh').slice(0, 1).map((event, i) => (
-                          <div key={i} className="calendar-event" style={{ background: getEventColor(event.category), color: '#1a1a2e' }}>FNH</div>
-                        ))}
-                      </>
-                    )}
+          
+          {/* FEATURE 4: Smart Recommendations */}
+          <div style={{ marginBottom: 20 }}>
+            <button className="btn-secondary" onClick={generateRecommendations} style={{ marginRight: 10 }}>
+              <Lightbulb size={18} /> Get Smart Recommendations
+            </button>
+          </div>
+          
+          {showRecommendations && recommendations.length > 0 && (
+            <div className="recommendations-panel">
+              <h3><Sparkles size={20} /> Recommended Time Blocks</h3>
+              <p style={{ marginBottom: 15, fontSize: '0.9rem', color: '#9ca3af' }}>These suggestions help distribute your time evenly throughout the month.</p>
+              {recommendations.map(rec => {
+                const blockConfig = DRAGGABLE_BLOCK_TYPES.find(b => b.id === rec.type);
+                return (
+                  <div key={rec.id} className="recommendation-item">
+                    <div className="rec-text">
+                      <span style={{ fontSize: '1.2rem' }}>{blockConfig?.icon}</span>
+                      <span>{rec.message}</span>
+                    </div>
+                    <button onClick={() => applyRecommendation(rec)}>Apply</button>
                   </div>
-                ))}
+                );
+              })}
+              <div className="rec-actions">
+                <button className="btn-primary" onClick={applyAllRecommendations}>Apply All</button>
+                <button className="btn-secondary" onClick={() => setShowRecommendations(false)}>Dismiss</button>
               </div>
-
-              <h3 style={{ marginBottom: 16, fontSize: 18 }}>Week by Week</h3>
-              {weeksInMonth.map((week, idx) => (
-                <div key={idx} className="week-card" onClick={() => setSelectedWeek(idx)}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>Week {week.weekNumber}</div>
-                      <div style={{ fontSize: 12, opacity: 0.6 }}>
-                        {week.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {week.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 13, color: '#60a5fa' }}>View \u2192</div>
-                  </div>
-                </div>
-              ))}
-            </>
-          ) : (
-            (() => {
-              const week = weeksInMonth[selectedWeek];
-              return (
-                <>
-                  <div style={{ textAlign: 'center', marginBottom: 20 }}>
-                    <h3 style={{ margin: 0 }}>Week {week.weekNumber}</h3>
-                    <div style={{ opacity: 0.6, fontSize: 14 }}>
-                      {week.start.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - {week.end.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16, fontSize: 10 }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Lock size={10} /> Locked</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><GripVertical size={10} /> Drag</span>
-                    {Object.entries(BLOCK_COLORS).slice(0, 5).map(([type, colors]) => (
-                      <span key={type} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ width: 10, height: 10, borderRadius: 2, background: colors.bg }} />
-                        {type}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="schedule-grid">
-                    <div className="schedule-header"></div>
-                    {DAYS.map(day => <div key={day} className="schedule-header">{day.slice(0, 3)}</div>)}
-                    
-                    {HOURS.map(hour => (
-                      <React.Fragment key={hour}>
-                        <div className="schedule-time">{formatHour(hour)}</div>
-                        {DAYS.map(day => {
-                          const blocks = getDayBlocks(day);
-                          const startingBlocks = blocks.filter(b => b.start === hour);
-                          
-                          return (
-                            <div key={day} className="schedule-cell" onDragOver={(e) => e.preventDefault()} onDrop={() => handleMealDrop(day, hour)}>
-                              {startingBlocks.map((block, i) => {
-                                const height = (block.end - block.start) * 40 - 4;
-                                const colors = BLOCK_COLORS[block.type] || { bg: '#888', text: '#fff' };
-                                return (
-                                  <div
-                                    key={i}
-                                    className={`schedule-block ${block.locked ? 'locked' : 'draggable'}`}
-                                    style={{ top: 2, height, background: colors.bg, color: colors.text }}
-                                    draggable={!block.locked}
-                                    onDragStart={() => !block.locked && handleMealDragStart(day, block.type)}
-                                  >
-                                    {block.locked ? <Lock size={8} /> : <GripVertical size={8} />}
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{block.name}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })}
-                      </React.Fragment>
-                    ))}
-                  </div>
-
-                  {(() => {
-                    const scheduleMonthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
-                    const connectionData = communityConnections[scheduleMonthKey];
-                    if (connectionData) {
-                      const deadline = new Date(connectionData.dueDate);
-                      const today = new Date();
-                      const daysLeft = Math.max(0, Math.ceil((deadline - today) / (1000 * 60 * 60 * 24)));
-                      const weeksLeft = Math.max(1, Math.ceil(daysLeft / 7));
-                      const perWeek = Math.ceil(connectionData.communitySize / weeksLeft);
-                      const perShift = Math.ceil(connectionData.communitySize / Math.max(1, dodShifts.length * weeksLeft));
-                      
-                      return (
-                        <div style={{ marginTop: 20, padding: 14, background: 'rgba(197,179,217,0.1)', borderRadius: 10, fontSize: 13 }}>
-                          <strong>\ud83c\udfaf This Week:</strong> {perWeek} connections
-                          {dodShifts.length > 0 && <span> ({perShift} per DOD on {dodShifts.join(', ')})</span>}
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                </>
-              );
-            })()
+            </div>
           )}
           
+          {/* FEATURE 5: Month Navigation & View Toggle */}
+          <div className="month-nav" style={{ marginBottom: 0 }}>
+            <button onClick={() => navigateMonth(-1)}><ArrowLeft size={20} /></button>
+            <h3>{MONTHS[selectedMonth.month]} {selectedMonth.year}</h3>
+            <button onClick={() => navigateMonth(1)}><ArrowRight size={20} /></button>
+          </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+            <div className="view-toggle">
+              <button className={viewMode === 'month' ? 'active' : ''} onClick={() => setViewMode('month')}>
+                <LayoutGrid size={16} /> Month
+              </button>
+              <button className={viewMode === 'week' ? 'active' : ''} onClick={() => { setViewMode('week'); if (!selectedWeek) setSelectedWeek(weeks[0]); }}>
+                <List size={16} /> Week
+              </button>
+            </div>
+          </div>
+          
+          {/* Monthly View */}
+          {viewMode === 'month' && (
+            <div className="calendar-grid">
+              {DAYS.map(day => (
+                <div key={day} className="calendar-header">{day.slice(0, 3)}</div>
+              ))}
+              {getMonthlyCalendarData().map((day, i) => (
+                <div key={i} className={`calendar-day ${day.date === null ? 'empty' : ''} ${draggedBlockType ? 'drop-target' : ''}`} onDragOver={(e) => { e.preventDefault(); }} onDrop={() => day.dateStr && handleBlockDrop(day.dateStr, 12)}>
+                  {day.date && (
+                    <>
+                      <div className="date">{day.date}</div>
+                      {day.events.slice(0, 4).map((event, j) => (
+                        <div key={j} className={`event ${event.blockId ? 'removable' : ''}`} style={{ background: BLOCK_COLORS[event.type]?.bg || '#666', color: BLOCK_COLORS[event.type]?.text || '#fff' }} onClick={() => event.blockId && removeScheduledBlock(event.dateStr, event.blockId)}>
+                          {event.name}
+                          {event.blockId && <span className="remove-btn">×</span>}
+                        </div>
+                      ))}
+                      {day.events.length > 4 && (
+                        <div className="event" style={{ background: 'rgba(255,255,255,0.1)', color: '#9ca3af' }}>+{day.events.length - 4} more</div>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Weekly View */}
+          {viewMode === 'week' && selectedWeek && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 20 }}>
+                {weeks.map((week, i) => (
+                  <button key={i} className={`btn-secondary ${selectedWeek === week ? 'active' : ''}`} style={selectedWeek === week ? { background: 'rgba(134, 197, 184, 0.2)', borderColor: '#86c5b8' } : {}} onClick={() => setSelectedWeek(week)}>
+                    Week {i + 1}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="weekly-grid">
+                <div className="weekly-header"></div>
+                {DAYS.map((day, i) => {
+                  const date = new Date(selectedWeek.start);
+                  date.setDate(date.getDate() + i);
+                  return (
+                    <div key={day} className="weekly-header">
+                      {day.slice(0, 3)} {date.getDate()}
+                    </div>
+                  );
+                })}
+                
+                {HOURS.map(hour => (
+                  <React.Fragment key={hour}>
+                    <div className="weekly-time">{formatTime(hour)}</div>
+                    {DAYS.map((day, dayIdx) => {
+                      const date = new Date(selectedWeek.start);
+                      date.setDate(date.getDate() + dayIdx);
+                      const dateStr = date.toISOString().split('T')[0];
+                      
+                      // Get blocks for this cell
+                      const blocks = [];
+                      
+                      // Classes
+                      classes.filter(c => c.day === day && c.startTime === hour).forEach(c => {
+                        blocks.push({ type: 'class', name: c.name, duration: c.endTime - c.startTime, locked: true });
+                      });
+                      
+                      // DOD
+                      if (dodShifts.includes(day) && hour === 20) {
+                        blocks.push({ type: 'dod', name: 'DOD', duration: 3, locked: true });
+                      }
+                      
+                      // Meetings
+                      Object.entries(meetings).forEach(([type, slots]) => {
+                        slots.filter(s => s.day === day && parseInt(s.time.split(':')[0]) === hour).forEach(() => {
+                          const meeting = MEETING_TYPES.find(m => m.id === type);
+                          blocks.push({ type: 'meeting', name: meeting?.name || type, duration: meeting?.duration || 1, locked: true });
+                        });
+                      });
+                      
+                      // Scheduled blocks (drag-and-drop)
+                      const dayBlocks = scheduledBlocks[dateStr] || [];
+                      dayBlocks.filter(b => b.startHour === hour).forEach(b => {
+                        blocks.push({ type: b.type, name: `${b.icon} ${b.name}`, duration: b.hours, locked: false, blockId: b.id, dateStr });
+                      });
+                      
+                      // Meals
+                      const meals = weeklyMeals[day];
+                      if (meals) {
+                        if (meals.breakfast.start === hour) blocks.push({ type: 'breakfast', name: '🍳', duration: 1, locked: false });
+                        if (meals.lunch.start === hour) blocks.push({ type: 'lunch', name: '🥗', duration: 1, locked: false });
+                        if (meals.dinner.start === hour) blocks.push({ type: 'dinner', name: '🍽️', duration: 1, locked: false });
+                      }
+                      
+                      return (
+                        <div key={`${day}-${hour}`} className={`weekly-cell ${draggedBlockType ? 'drop-target' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={() => handleBlockDrop(dateStr, hour)}>
+                          {blocks.map((block, bi) => (
+                            <div key={bi} className={`weekly-block ${block.locked ? 'locked' : 'draggable'}`} style={{ background: BLOCK_COLORS[block.type]?.bg || '#666', color: BLOCK_COLORS[block.type]?.text || '#fff', height: `${block.duration * 35 - 4}px` }} onClick={() => block.blockId && removeScheduledBlock(block.dateStr, block.blockId)}>
+                              {block.name}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
+              </div>
+            </>
+          )}
+          
+          {/* Connection Info */}
+          {(() => {
+            const monthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
+            const metrics = getConnectionMetrics(monthKey);
+            if (!metrics) return null;
+            return (
+              <div style={{ marginTop: 20, padding: 15, background: 'rgba(134, 197, 184, 0.1)', borderRadius: 10 }}>
+                <h4 style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Users size={18} /> Connection Target This Month
+                </h4>
+                <p>{metrics.total} people • {metrics.perWeek}/week • {metrics.perShift}/DOD shift • {metrics.daysRemaining} days remaining</p>
+              </div>
+            );
+          })()}
+          
           <div className="nav-buttons">
-            <button className="btn-secondary" onClick={() => setStep(6)}><ChevronLeft size={20} /> Edit</button>
+            <button className="btn-secondary" onClick={() => setStep('connections')}><ChevronLeft size={20} /> Edit</button>
             <button className="btn-secondary" onClick={() => setStep(1)}>Start Over</button>
           </div>
         </div>
