@@ -148,7 +148,7 @@ const getEBBTEWindows = () => {
 };
 
 const MEETING_TYPES = [
-  { id: 'team', name: 'Team Meeting', frequency: 'Weekly', duration: 1, color: '#86c5b8' },
+  { id: 'team', name: 'Team Meeting', frequency: 'Weekly', duration: 1, color: '#34d399' },
   { id: 'senior', name: 'Senior Don 1:1', frequency: 'Monthly', duration: 0.5, color: '#b8a9c9' },
   { id: 'rlc', name: 'RLC Meeting', frequency: 'Bi-weekly', duration: 0.5, color: '#e8c4a0' },
 ];
@@ -866,152 +866,156 @@ export default function DonScheduler() {
   const hourTotals = calculateHourTotals();
   const weeks = getWeeksInMonth(selectedMonth.month, selectedMonth.year);
 
-  // Styles
+  // Styles - Original aesthetic
   const styles = `
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Fraunces:wght@700;800&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); min-height: 100vh; color: #e4e4e7; }
+    body { font-family: 'Outfit', sans-serif; min-height: 100vh; color: #e8ecf4; }
     .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-    .header { text-align: center; margin-bottom: 30px; }
-    .header h1 { font-size: 2.5rem; background: linear-gradient(135deg, #a8c5e2, #9dd5c8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px; }
-    .header p { color: #9ca3af; font-size: 1.1rem; }
     
-    .step-tabs { display: flex; gap: 8px; margin-bottom: 25px; flex-wrap: wrap; justify-content: center; }
-    .step-tab { padding: 10px 16px; border-radius: 20px; border: none; background: rgba(255,255,255,0.05); color: #9ca3af; cursor: pointer; transition: all 0.3s; font-size: 0.9rem; }
-    .step-tab:hover { background: rgba(255,255,255,0.1); }
-    .step-tab.active { background: linear-gradient(135deg, #a8c5e2, #86c5b8); color: #1a1a2e; font-weight: 600; }
-    .step-tab.completed { background: rgba(134, 197, 184, 0.2); color: #86c5b8; }
+    h1 { font-family: 'Fraunces', serif; font-size: 38px; text-align: center; margin-bottom: 8px; background: linear-gradient(135deg, #fff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+    .subtitle { text-align: center; opacity: 0.5; margin-bottom: 28px; font-size: 15px; }
     
-    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 25px; margin-bottom: 20px; }
-    .card h2 { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; font-size: 1.3rem; color: #e4e4e7; }
+    .step-tabs { display: flex; gap: 6px; margin-bottom: 24px; flex-wrap: wrap; justify-content: center; }
+    .step-tab { padding: 8px 14px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); cursor: pointer; font-family: inherit; font-weight: 500; font-size: 13px; color: rgba(255,255,255,0.6); transition: all 0.2s; }
+    .step-tab:hover { background: rgba(255,255,255,0.08); }
+    .step-tab.active { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: white; border-color: transparent; }
+    .step-tab.completed { border-color: #34d399; color: #34d399; }
     
-    .form-row { display: flex; gap: 12px; margin-bottom: 15px; flex-wrap: wrap; align-items: flex-end; }
+    .card { background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 28px; margin-bottom: 20px; }
+    .card h2 { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; font-size: 22px; color: #e8ecf4; }
+    
+    .form-row { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
     .form-group { display: flex; flex-direction: column; gap: 6px; }
-    .form-group label { font-size: 0.85rem; color: #9ca3af; }
-    .form-group input, .form-group select { padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: #e4e4e7; font-size: 0.95rem; }
-    .form-group input:focus, .form-group select:focus { outline: none; border-color: #86c5b8; }
+    .form-group label { font-size: 0.85rem; color: rgba(255,255,255,0.6); }
+    .form-group input, .form-group select { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 16px; color: white; font-size: 15px; font-family: inherit; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: #3b82f6; }
+    .form-group select option { background: #1a2744; color: white; }
     
-    .btn-primary { padding: 10px 20px; border-radius: 8px; border: none; background: linear-gradient(135deg, #86c5b8, #a8c5e2); color: #1a1a2e; font-weight: 600; cursor: pointer; transition: all 0.3s; }
-    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(134, 197, 184, 0.3); }
-    .btn-secondary { padding: 10px 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #e4e4e7; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 6px; }
-    .btn-secondary:hover { background: rgba(255,255,255,0.05); }
-    .btn-add { padding: 8px 16px; border-radius: 6px; border: none; background: rgba(134, 197, 184, 0.2); color: #86c5b8; cursor: pointer; display: flex; align-items: center; gap: 6px; }
-    .btn-add:hover { background: rgba(134, 197, 184, 0.3); }
-    .btn-danger { padding: 6px 10px; border-radius: 6px; border: none; background: rgba(239, 68, 68, 0.2); color: #ef4444; cursor: pointer; }
-    .btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
+    .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); border: none; padding: 14px 28px; border-radius: 12px; color: white; font-weight: 600; font-size: 15px; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(59,130,246,0.3); }
+    .btn-secondary { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); padding: 12px 24px; border-radius: 12px; color: white; font-weight: 500; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+    .btn-add { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); color: #34d399; padding: 12px 24px; border-radius: 12px; font-weight: 600; font-size: 15px; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; }
+    .btn-add:hover { background: rgba(16,185,129,0.25); }
+    .btn-danger { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 12px 24px; border-radius: 12px; font-weight: 600; font-size: 15px; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; }
+    .btn-danger:hover { background: rgba(239,68,68,0.25); }
     
     .tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
-    .tag { padding: 8px 14px; border-radius: 20px; font-size: 0.85rem; display: flex; align-items: center; gap: 8px; }
-    .tag button { background: none; border: none; cursor: pointer; opacity: 0.7; }
-    .tag button:hover { opacity: 1; }
+    .tag { display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 20px; margin: 4px; font-size: 13px; font-weight: 500; }
+    .tag button { background: rgba(255,255,255,0.2); border: none; width: 20px; height: 20px; border-radius: 50%; color: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
     
-    .upload-zone { border: 2px dashed rgba(255,255,255,0.1); border-radius: 12px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.3s; }
-    .upload-zone:hover, .upload-zone.dragging { border-color: #86c5b8; background: rgba(134, 197, 184, 0.05); }
+    .upload-zone { border: 2px dashed rgba(255,255,255,0.15); border-radius: 16px; padding: 36px; text-align: center; cursor: pointer; transition: all 0.3s; }
+    .upload-zone:hover, .upload-zone.dragging { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
     
     .day-toggle { display: flex; flex-wrap: wrap; gap: 8px; }
-    .day-btn { padding: 10px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #9ca3af; cursor: pointer; transition: all 0.3s; }
-    .day-btn:hover { background: rgba(255,255,255,0.05); }
+    .day-btn { padding: 10px 16px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.6); cursor: pointer; transition: all 0.2s; font-family: inherit; }
+    .day-btn:hover { background: rgba(255,255,255,0.08); }
     .day-btn.selected { background: rgba(245, 213, 160, 0.2); border-color: #f5d5a0; color: #f5d5a0; }
     
-    .nav-buttons { display: flex; gap: 12px; margin-top: 25px; }
+    .nav-buttons { display: flex; justify-content: space-between; margin-top: 24px; gap: 12px; flex-wrap: wrap; }
     
     .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
     .month-nav h3 { font-size: 1.3rem; }
-    .month-nav button { padding: 8px 12px; border-radius: 8px; border: none; background: rgba(255,255,255,0.05); color: #e4e4e7; cursor: pointer; }
+    .month-nav button { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); width: 40px; height: 40px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: white; }
     .month-nav button:hover { background: rgba(255,255,255,0.1); }
     
-    .view-toggle { display: flex; gap: 8px; background: rgba(255,255,255,0.05); padding: 4px; border-radius: 8px; }
-    .view-toggle button { padding: 8px 16px; border-radius: 6px; border: none; background: transparent; color: #9ca3af; cursor: pointer; display: flex; align-items: center; gap: 6px; }
-    .view-toggle button.active { background: rgba(134, 197, 184, 0.2); color: #86c5b8; }
+    .view-toggle { display: flex; gap: 8px; background: rgba(255,255,255,0.04); padding: 4px; border-radius: 10px; }
+    .view-toggle button { padding: 8px 16px; border-radius: 8px; border: none; background: transparent; color: rgba(255,255,255,0.6); cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: inherit; }
+    .view-toggle button.active { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: white; }
     
     .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-    .calendar-header { padding: 10px; text-align: center; font-weight: 600; color: #9ca3af; font-size: 0.85rem; }
-    .calendar-day { min-height: 100px; background: rgba(255,255,255,0.02); border-radius: 8px; padding: 8px; border: 1px solid transparent; transition: all 0.2s; }
-    .calendar-day:hover { border-color: rgba(134, 197, 184, 0.3); }
-    .calendar-day.drop-target { border-color: #86c5b8; background: rgba(134, 197, 184, 0.1); }
-    .calendar-day .date { font-weight: 600; margin-bottom: 6px; color: #e4e4e7; }
-    .calendar-day .event { font-size: 0.7rem; padding: 3px 6px; border-radius: 4px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+    .calendar-header { text-align: center; font-weight: 600; font-size: 12px; padding: 10px 4px; color: rgba(255,255,255,0.5); }
+    .calendar-day { min-height: 85px; background: rgba(255,255,255,0.03); border-radius: 10px; padding: 5px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; overflow: hidden; }
+    .calendar-day:hover { background: rgba(255,255,255,0.06); }
+    .calendar-day.drop-target { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+    .calendar-day .date { font-weight: 600; font-size: 12px; margin-bottom: 3px; color: #e8ecf4; }
+    .calendar-day .event { font-size: 8px; padding: 2px 4px; border-radius: 3px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; position: relative; }
     .calendar-day .event.removable { cursor: pointer; }
     .calendar-day .event.removable:hover { opacity: 0.8; }
     .calendar-day .event .remove-btn { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); display: none; background: rgba(0,0,0,0.3); border-radius: 50%; width: 14px; height: 14px; line-height: 14px; text-align: center; font-size: 10px; }
     .calendar-day .event.removable:hover .remove-btn { display: block; }
-    .calendar-day.empty { background: transparent; min-height: auto; }
+    .calendar-day.empty { background: transparent; min-height: auto; cursor: default; }
     
-    .block-palette { display: flex; gap: 10px; flex-wrap: wrap; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 12px; margin-bottom: 20px; }
-    .block-palette-item { padding: 10px 16px; border-radius: 8px; cursor: grab; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; transition: all 0.2s; }
+    .block-palette { display: flex; gap: 10px; flex-wrap: wrap; padding: 15px; background: rgba(255,255,255,0.04); border-radius: 14px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.06); }
+    .block-palette-item { padding: 10px 16px; border-radius: 10px; cursor: grab; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; transition: all 0.2s; }
     .block-palette-item:hover { transform: scale(1.05); }
     .block-palette-item:active { cursor: grabbing; }
-    .block-palette-label { margin-right: auto; font-weight: 500; color: #9ca3af; }
+    .block-palette-label { margin-right: auto; font-weight: 500; color: rgba(255,255,255,0.5); }
     
-    .recommendations-panel { background: rgba(255, 215, 0, 0.05); border: 1px solid rgba(255, 215, 0, 0.2); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-    .recommendations-panel h3 { display: flex; align-items: center; gap: 8px; color: #ffd700; margin-bottom: 15px; }
-    .recommendation-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 8px; }
-    .recommendation-item .rec-text { display: flex; align-items: center; gap: 8px; }
-    .recommendation-item button { padding: 6px 12px; border-radius: 6px; border: none; background: rgba(134, 197, 184, 0.2); color: #86c5b8; cursor: pointer; }
-    .recommendation-item button:hover { background: rgba(134, 197, 184, 0.3); }
+    .recommendations-panel { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.2); border-radius: 14px; padding: 20px; margin-bottom: 20px; }
+    .recommendations-panel h3 { display: flex; align-items: center; gap: 8px; color: #fbbf24; margin-bottom: 15px; }
+    .recommendation-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.04); border-radius: 10px; margin-bottom: 8px; }
+    .recommendation-item .rec-text { display: flex; align-items: center; gap: 10px; }
+    .recommendation-item button { padding: 8px 14px; border-radius: 8px; border: none; background: rgba(16,185,129,0.15); color: #34d399; cursor: pointer; font-weight: 500; }
+    .recommendation-item button:hover { background: rgba(16,185,129,0.25); }
     .rec-actions { display: flex; gap: 10px; margin-top: 15px; }
     
-    .weekly-grid { display: grid; grid-template-columns: 60px repeat(7, 1fr); gap: 2px; background: rgba(255,255,255,0.02); border-radius: 12px; overflow: hidden; }
-    .weekly-header { padding: 12px 8px; text-align: center; font-weight: 600; background: rgba(255,255,255,0.05); font-size: 0.85rem; }
-    .weekly-time { padding: 8px; font-size: 0.75rem; color: #9ca3af; text-align: right; background: rgba(255,255,255,0.02); }
-    .weekly-cell { min-height: 35px; background: rgba(255,255,255,0.01); border: 1px solid transparent; transition: all 0.2s; position: relative; }
-    .weekly-cell:hover { border-color: rgba(134, 197, 184, 0.3); }
-    .weekly-cell.drop-target { border-color: #86c5b8; background: rgba(134, 197, 184, 0.1); }
-    .weekly-block { position: absolute; left: 2px; right: 2px; padding: 4px; border-radius: 4px; font-size: 0.7rem; overflow: hidden; z-index: 1; }
+    .weekly-grid { display: grid; grid-template-columns: 50px repeat(7, 1fr); gap: 2px; font-size: 11px; }
+    .weekly-header { padding: 8px 4px; text-align: center; font-weight: 600; font-size: 11px; background: rgba(255,255,255,0.05); border-radius: 6px; }
+    .weekly-time { padding: 4px; text-align: right; font-size: 10px; opacity: 0.5; height: 40px; display: flex; align-items: flex-start; justify-content: flex-end; }
+    .weekly-cell { height: 40px; background: rgba(255,255,255,0.02); border-radius: 4px; position: relative; border: 1px solid transparent; }
+    .weekly-cell:hover { background: rgba(255,255,255,0.05); }
+    .weekly-cell.drop-target { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
+    .weekly-block { position: absolute; left: 2px; right: 2px; border-radius: 4px; padding: 3px 5px; font-size: 10px; font-weight: 500; overflow: hidden; display: flex; align-items: center; gap: 4px; z-index: 1; }
     
     .schedule-block { padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 4px; }
     .schedule-block.draggable { cursor: grab; }
-    .schedule-block.locked { opacity: 0.8; }
+    .schedule-block.locked { cursor: default; }
     
-    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px; margin-bottom: 25px; }
-    .summary-item { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; text-align: center; }
-    .summary-item .label { font-size: 0.8rem; color: #9ca3af; margin-bottom: 5px; }
-    .summary-item .value { font-size: 1.4rem; font-weight: 700; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-bottom: 20px; }
+    .summary-item { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.06); }
+    .summary-item .label { font-size: 9px; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+    .summary-item .value { font-size: 22px; font-weight: 700; }
     
-    .month-folder { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 15px; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 12px; }
-    .month-folder:hover { background: rgba(255,255,255,0.05); border-color: rgba(134, 197, 184, 0.3); }
-    .month-folder.active { border-color: #86c5b8; background: rgba(134, 197, 184, 0.1); }
-    .month-folder-icon { font-size: 1.5rem; }
+    .month-folder { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 16px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 12px; }
+    .month-folder:hover { background: rgba(255,255,255,0.06); transform: translateY(-2px); }
+    .month-folder.active { border-color: #3b82f6; background: rgba(59,130,246,0.1); }
     .month-folder-info { flex: 1; }
     .month-folder-info h4 { margin-bottom: 4px; }
-    .month-folder-info p { font-size: 0.85rem; color: #9ca3af; }
+    .month-folder-info p { font-size: 0.85rem; opacity: 0.6; }
     
-    .dod-entry { display: flex; align-items: center; gap: 15px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 8px; }
+    .dod-entry { display: flex; align-items: center; gap: 15px; padding: 14px; background: rgba(255,255,255,0.04); border-radius: 10px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.06); }
     .dod-entry-info { flex: 1; }
     .dod-entry-info .date { font-weight: 600; }
-    .dod-entry-info .time { font-size: 0.85rem; color: #9ca3af; }
-    .dod-entry-info .notes { font-size: 0.8rem; color: #6b7280; font-style: italic; }
+    .dod-entry-info .time { font-size: 0.85rem; opacity: 0.6; }
+    .dod-entry-info .notes { font-size: 0.8rem; opacity: 0.5; font-style: italic; }
     .dod-entry .hours { font-size: 1.2rem; font-weight: 700; color: #f5d5a0; }
     
     .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 12px; margin-top: 15px; }
-    .metric-card { background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; text-align: center; }
-    .metric-card .value { font-size: 1.5rem; font-weight: 700; color: #86c5b8; }
-    .metric-card .label { font-size: 0.75rem; color: #9ca3af; }
+    .metric-card { background: rgba(255,255,255,0.05); padding: 14px; border-radius: 10px; text-align: center; border: 1px solid rgba(255,255,255,0.06); }
+    .metric-card .value { font-size: 1.5rem; font-weight: 700; color: #60a5fa; }
+    .metric-card .label { font-size: 0.75rem; opacity: 0.6; }
     
     .rlm-event-grid { display: grid; gap: 8px; max-height: 400px; overflow-y: auto; }
-    .rlm-event { display: flex; align-items: center; gap: 10px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; }
+    .rlm-event { display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
+    .rlm-event:hover { background: rgba(255,255,255,0.06); }
+    .rlm-event.selected { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.3); }
     .rlm-event input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
     .rlm-event .event-info { flex: 1; }
     .rlm-event .event-date { font-weight: 600; font-size: 0.9rem; }
-    .rlm-event .event-title { font-size: 0.85rem; color: #9ca3af; }
-    .rlm-event .event-hours { font-size: 0.8rem; color: #86c5b8; }
+    .rlm-event .event-title { font-size: 0.85rem; opacity: 0.6; }
+    .rlm-event .event-hours { font-size: 0.8rem; color: #60a5fa; }
     .rlm-event.disabled { opacity: 0.6; }
     
     .folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
+    
+    .window-card { background: rgba(255,255,255,0.04); border-radius: 14px; padding: 18px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.08); }
+    .window-card h4 { margin: 0 0 12px 0; display: flex; align-items: center; gap: 10px; font-size: 16px; }
   `;
 
   return (
-    <div className="container">
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0a1628 0%, #1a2744 50%, #0d1a2d 100%)', fontFamily: "'Outfit', sans-serif", color: '#e8ecf4', padding: 20 }}>
       <style>{styles}</style>
       
-      <div className="header">
-        <h1>Don Schedule Manager</h1>
-        <p>Plan your weekly commitments & monthly hours</p>
-      </div>
+      <h1>Don Schedule Manager</h1>
+      <p className="subtitle">Plan your month • Track your hours • Balance your life</p>
 
       {/* Step Navigation */}
       <div className="step-tabs">
         <button className={`step-tab ${step === 1 ? 'active' : classes.length > 0 ? 'completed' : ''}`} onClick={() => setStep(1)}>Classes</button>
-        <button className={`step-tab ${step === 2 ? 'active' : dodShifts.length > 0 ? 'completed' : ''}`} onClick={() => setStep(2)}>DOD Weekly</button>
+        <button className={`step-tab ${step === 2 ? 'active' : dodShifts.length > 0 ? 'completed' : ''}`} onClick={() => setStep(2)}>DOD</button>
         <button className={`step-tab ${step === 'dod-monthly' ? 'active' : Object.keys(dodMonthlyHours).length > 0 ? 'completed' : ''}`} onClick={() => setStep('dod-monthly')}>DOD Hours</button>
         <button className={`step-tab ${step === 3 ? 'active' : Object.values(meetings).some(m => m.length > 0) ? 'completed' : ''}`} onClick={() => setStep(3)}>Meetings</button>
         <button className={`step-tab ${step === 4 ? 'active' : ''}`} onClick={() => setStep(4)}>RLM Events</button>
@@ -1031,7 +1035,7 @@ export default function DonScheduler() {
             <p style={{ fontSize: '0.8rem', color: '#9ca3af', marginTop: 5 }}>Format: Class Name, Day, Start Time, End Time</p>
             <input ref={classInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={(e) => e.target.files[0] && parseExcelFile(e.target.files[0])} />
           </div>
-          {uploadStatus && <p style={{ marginBottom: 15, color: '#86c5b8' }}>{uploadStatus}</p>}
+          {uploadStatus && <p style={{ marginBottom: 15, color: '#34d399' }}>{uploadStatus}</p>}
           
           <div style={{ marginBottom: 20 }}>
             <h3 style={{ marginBottom: 15, fontSize: '1rem' }}>Or add manually:</h3>
@@ -1413,7 +1417,7 @@ export default function DonScheduler() {
             if (!metrics) return null;
             return (
               <div style={{ background: 'rgba(134, 197, 184, 0.1)', padding: 20, borderRadius: 12, marginBottom: 20 }}>
-                <h4 style={{ marginBottom: 15, color: '#86c5b8' }}>Connection Targets</h4>
+                <h4 style={{ marginBottom: 15, color: '#34d399' }}>Connection Targets</h4>
                 <div className="metrics-grid">
                   <div className="metric-card">
                     <div className="value">{metrics.total}</div>
@@ -1480,26 +1484,30 @@ export default function DonScheduler() {
               <div className="value" style={{ color: BLOCK_COLORS.class.bg }}>{hourTotals.classes}h</div>
             </div>
             <div className="summary-item">
-              <div className="label">DOD (Weekly)</div>
-              <div className="value" style={{ color: BLOCK_COLORS.dod.bg }}>{hourTotals.dodWeekly}h</div>
+              <div className="label">Don Hours</div>
+              <div className="value" style={{ color: BLOCK_COLORS.dod.bg }}>{hourTotals.dodWeekly + hourTotals.dodMonthly + hourTotals.rlm}h</div>
             </div>
-            <div className="summary-item">
-              <div className="label">DOD (Month)</div>
-              <div className="value" style={{ color: '#f5d5a0' }}>{hourTotals.dodMonthly}h</div>
-            </div>
+            {viewMode === 'week' && (
+              <div className="summary-item">
+                <div className="label">DOD (Weekly)</div>
+                <div className="value" style={{ color: '#f5d5a0' }}>{hourTotals.dodWeekly}h</div>
+              </div>
+            )}
+            {viewMode === 'month' && (
+              <div className="summary-item">
+                <div className="label">DOD (Month)</div>
+                <div className="value" style={{ color: '#f5d5a0' }}>{hourTotals.dodMonthly}h</div>
+              </div>
+            )}
             <div className="summary-item">
               <div className="label">Meetings</div>
               <div className="value" style={{ color: BLOCK_COLORS.meeting.bg }}>{hourTotals.meetings}h</div>
             </div>
             <div className="summary-item">
-              <div className="label">RLM</div>
-              <div className="value" style={{ color: '#e8b4c8' }}>{hourTotals.rlm}h</div>
-            </div>
-            <div className="summary-item">
               <div className="label">Scheduled</div>
-              <div className="value" style={{ color: '#86c5b8' }}>{Object.values(hourTotals.scheduled).reduce((a, b) => a + b, 0)}h</div>
+              <div className="value" style={{ color: '#34d399' }}>{Object.values(hourTotals.scheduled).reduce((a, b) => a + b, 0)}h</div>
             </div>
-            <div className="summary-item" style={{ background: 'rgba(134, 197, 184, 0.1)' }}>
+            <div className="summary-item" style={{ background: 'rgba(59,130,246,0.1)' }}>
               <div className="label">Total</div>
               <div className="value">{hourTotals.total}h</div>
             </div>
@@ -1596,7 +1604,7 @@ export default function DonScheduler() {
             <>
               <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 20 }}>
                 {weeks.map((week, i) => (
-                  <button key={i} className={`btn-secondary ${selectedWeek === week ? 'active' : ''}`} style={selectedWeek === week ? { background: 'rgba(134, 197, 184, 0.2)', borderColor: '#86c5b8' } : {}} onClick={() => setSelectedWeek(week)}>
+                  <button key={i} className={`btn-secondary ${selectedWeek === week ? 'active' : ''}`} style={selectedWeek === week ? { background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', borderColor: 'transparent' } : {}} onClick={() => setSelectedWeek(week)}>
                     Week {i + 1}
                   </button>
                 ))}
@@ -1689,8 +1697,8 @@ export default function DonScheduler() {
           })()}
           
           <div className="nav-buttons">
-            <button className="btn-secondary" onClick={() => setStep('connections')}><ChevronLeft size={20} /> Edit</button>
-            <button className="btn-secondary" onClick={() => setStep(1)}>Start Over</button>
+            <button className="btn-add" onClick={() => setStep('connections')}><ChevronLeft size={20} /> Edit</button>
+            <button className="btn-danger" onClick={() => setStep(1)}>Start Over</button>
           </div>
         </div>
       )}
