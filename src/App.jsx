@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Plus, X, Calendar, Clock, Users, BookOpen, ChevronRight, ChevronLeft, Check, AlertCircle, Target, CalendarDays, ArrowLeft, ArrowRight, FileSpreadsheet, Lock, GripVertical, Coffee, Box, Gift } from 'lucide-react';
+import { Upload, Plus, X, Calendar, Clock, Users, BookOpen, ChevronRight, ChevronLeft, Check, AlertCircle, Target, CalendarDays, ArrowLeft, ArrowRight, FileSpreadsheet, Lock, GripVertical, Package, Star } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -828,12 +828,12 @@ export default function DonScheduler() {
       {/* Step 5: EB & BTE */}
       {step === 5 && (
         <div className="glass-card" style={{ maxWidth: 900, margin: '0 auto' }}>
-          <h2><Box size={24} /> EB & BTE Events</h2>
+          <h2><Package size={24} /> EB & BTE Events</h2>
           <p className="section-desc">Plan when you'll do your Event-in-the-Box (EB) and Bring-to-Event (BTE)</p>
           
           {/* EB Section */}
           <div className="window-card" style={{ borderColor: 'rgba(255,214,153,0.3)' }}>
-            <h4><Gift size={20} style={{ color: '#ffd699' }} /> Event-in-the-Box (EB)</h4>
+            <h4><Star size={20} style={{ color: '#ffd699' }} /> Event-in-the-Box (EB)</h4>
             
             {ebWindows.map(window => (
               <div key={window.num} style={{ marginBottom: 16, padding: 14, background: 'rgba(255,214,153,0.1)', borderRadius: 10 }}>
@@ -881,7 +881,7 @@ export default function DonScheduler() {
 
           {/* BTE Section */}
           <div className="window-card" style={{ borderColor: 'rgba(212,184,232,0.3)' }}>
-            <h4><Gift size={20} style={{ color: '#d4b8e8' }} /> Bring-to-Event (BTE)</h4>
+            <h4><Star size={20} style={{ color: '#d4b8e8' }} /> Bring-to-Event (BTE)</h4>
             
             {bteWindows.map(window => (
               <div key={window.num} style={{ marginBottom: 16, padding: 14, background: 'rgba(212,184,232,0.1)', borderRadius: 10 }}>
