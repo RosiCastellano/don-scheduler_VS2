@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Plus, X, Calendar, Clock, Users, BookOpen, ChevronRight, ChevronLeft, Check, AlertCircle, Target, CalendarDays, ArrowLeft, ArrowRight, FileSpreadsheet, Lock, GripVertical, Package, Star } from 'lucide-react';
+import { Upload, Plus, X, Calendar, Clock, Users, BookOpen, ChevronRight, ChevronLeft, Check, AlertCircle, Target, CalendarDays, ArrowLeft, ArrowRight, FileSpreadsheet, Lock, GripVertical, Package, Star, Folder, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -167,6 +167,9 @@ const BLOCK_COLORS = {
   bte: { bg: '#d4b8e8', text: '#4a2d5c' },
 };
 
+// Helper to generate month key
+const getMonthKey = (month, year) => `${year}-${String(month + 1).padStart(2, '0')}`;
+
 export default function DonScheduler() {
   const [step, setStep] = useState(1);
   
@@ -175,9 +178,14 @@ export default function DonScheduler() {
   const [newClass, setNewClass] = useState({ name: '', day: 'Monday', startTime: '9', endTime: '10' });
   const [uploadStatus, setUploadStatus] = useState('');
   
-  // DOD shifts
+  // DOD shifts (weekly recurring - kept for schedule view)
   const [dodShifts, setDodShifts] = useState([]);
   const [newDodDay, setNewDodDay] = useState('Monday');
+  
+  // DOD Monthly Hours - NEW: Flexible monthly hour tracking
+  const [dodMonthlyHours, setDodMonthlyHours] = useState({});
+  const [selectedDodMonth, setSelectedDodMonth] = useState({ month: 8, year: 2025 });
+  const [newDodEntry, setNewDodEntry] = useState({ date: '', startTime: '20:00', endTime: '23:00', notes: '' });
   
   // Meetings
   const [meetings, setMeetings] = useState({ team: [], senior: [], rlc: [] });
@@ -189,9 +197,10 @@ export default function DonScheduler() {
   const [newEB, setNewEB] = useState({ windowNum: 1, date: '', hours: 2 });
   const [newBTE, setNewBTE] = useState({ windowNum: 1, date: '', hours: 2 });
   
-  // Community connections
-  const [communitySize, setCommunitySize] = useState('');
-  const [connectionDeadline, setConnectionDeadline] = useState('');
+  // Community Connections - NEW: Monthly RLM-aligned tracking
+  const [communityConnections, setCommunityConnections] = useState({});
+  const [selectedConnectionMonth, setSelectedConnectionMonth] = useState({ month: 8, year: 2025 });
+  const [newConnection, setNewConnection] = useState({ startDate: '', dueDate: '', communitySize: '' });
   
   // RLM Events selection
   const [selectedRLMEvents, setSelectedRLMEvents] = useState(() => {
@@ -299,12 +308,12 @@ export default function DonScheduler() {
         
         if (parsedClasses.length > 0) {
           setClasses(prev => [...prev, ...parsedClasses]);
-          setUploadStatus(`✓ Imported ${parsedClasses.length} classes`);
+          setUploadStatus(`\u2713 Imported ${parsedClasses.length} classes`);
         } else {
-          setUploadStatus('⚠ No classes found. Check file format.');
+          setUploadStatus('\u26a0 No classes found. Check file format.');
         }
       } catch (error) {
-        setUploadStatus('⚠ Error reading file.');
+        setUploadStatus('\u26a0 Error reading file.');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -348,6 +357,72 @@ export default function DonScheduler() {
     }
   };
 
+  // DOD Monthly Hours Functions
+  const addDodEntry = () => {
+    if (newDodEntry.date && newDodEntry.startTime && newDodEntry.endTime) {
+      const monthKey = getMonthKey(selectedDodMonth.month, selectedDodMonth.year);
+      const start = newDodEntry.startTime.split(':').map(Number);
+      const end = newDodEntry.endTime.split(':').map(Number);
+      const hours = (end[0] + end[1]/60) - (start[0] + start[1]/60);
+      
+      const entry = {
+        id: Date.now(),
+        date: newDodEntry.date,
+        startTime: newDodEntry.startTime,
+        endTime: newDodEntry.endTime,
+        hours: Math.round(hours * 100) / 100,
+        notes: newDodEntry.notes
+      };
+      
+      setDodMonthlyHours(prev => ({
+        ...prev,
+        [monthKey]: [...(prev[monthKey] || []), entry]
+      }));
+      setNewDodEntry({ date: '', startTime: '20:00', endTime: '23:00', notes: '' });
+    }
+  };
+
+  const removeDodEntry = (monthKey, entryId) => {
+    setDodMonthlyHours(prev => ({
+      ...prev,
+      [monthKey]: prev[monthKey].filter(e => e.id !== entryId)
+    }));
+  };
+
+  const getDodMonthTotal = (monthKey) => {
+    const entries = dodMonthlyHours[monthKey] || [];
+    return entries.reduce((sum, e) => sum + e.hours, 0);
+  };
+
+  // Community Connections Functions
+  const saveConnectionMonth = () => {
+    if (newConnection.startDate && newConnection.dueDate && newConnection.communitySize) {
+      const monthKey = getMonthKey(selectedConnectionMonth.month, selectedConnectionMonth.year);
+      setCommunityConnections(prev => ({
+        ...prev,
+        [monthKey]: {
+          startDate: newConnection.startDate,
+          dueDate: newConnection.dueDate,
+          communitySize: parseInt(newConnection.communitySize),
+          createdAt: Date.now()
+        }
+      }));
+    }
+  };
+
+  const deleteConnectionMonth = (monthKey) => {
+    setCommunityConnections(prev => {
+      const updated = { ...prev };
+      delete updated[monthKey];
+      return updated;
+    });
+  };
+
+  const getCurrentConnectionData = () => {
+    const monthKey = getMonthKey(selectedConnectionMonth.month, selectedConnectionMonth.year);
+    return communityConnections[monthKey];
+  };
+
   const toggleRLMEvent = (eventId) => {
     setSelectedRLMEvents(prev => ({ ...prev, [eventId]: !prev[eventId] }));
   };
@@ -382,20 +457,36 @@ export default function DonScheduler() {
     return weeks;
   };
 
-  // Calculate community connections needed
+  // Calculate community connections needed (updated for monthly data)
   const getConnectionsInfo = () => {
-    if (!communitySize || !connectionDeadline) return null;
-    const size = parseInt(communitySize);
-    const deadline = new Date(connectionDeadline);
+    const monthKey = getMonthKey(selectedConnectionMonth.month, selectedConnectionMonth.year);
+    const data = communityConnections[monthKey];
+    if (!data) return null;
+    
+    const { communitySize, startDate, dueDate } = data;
+    const start = new Date(startDate);
+    const deadline = new Date(dueDate);
     const today = new Date();
     const daysLeft = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
+    const totalDays = Math.ceil((deadline - start) / (1000 * 60 * 60 * 24));
     const weeksLeft = Math.max(1, Math.ceil(daysLeft / 7));
+    const totalWeeks = Math.max(1, Math.ceil(totalDays / 7));
     const dodShiftsPerWeek = dodShifts.length;
     const totalDodShifts = Math.max(1, dodShiftsPerWeek * weeksLeft);
-    const connectionsPerShift = Math.ceil(size / totalDodShifts);
-    const connectionsPerWeek = Math.ceil(size / weeksLeft);
+    const connectionsPerShift = Math.ceil(communitySize / totalDodShifts);
+    const connectionsPerWeek = Math.ceil(communitySize / weeksLeft);
     
-    return { total: size, daysLeft, weeksLeft, perWeek: connectionsPerWeek, perShift: connectionsPerShift, totalShifts: totalDodShifts };
+    return { 
+      total: communitySize, 
+      daysLeft: Math.max(0, daysLeft), 
+      weeksLeft, 
+      totalWeeks,
+      perWeek: connectionsPerWeek, 
+      perShift: connectionsPerShift, 
+      totalShifts: totalDodShifts,
+      startDate,
+      dueDate
+    };
   };
 
   const countSelectedByCategory = (category) => {
@@ -404,11 +495,11 @@ export default function DonScheduler() {
     }, 0);
   };
 
-  // Calculate total don hours
+  // Calculate total don hours (updated to include monthly DOD hours)
   const calculateDonHours = () => {
     let hours = 0;
     
-    // DOD (3h each per week)
+    // DOD weekly recurring (3h each per week)
     hours += dodShifts.length * 3;
     
     // Meetings
@@ -417,7 +508,7 @@ export default function DonScheduler() {
       hours += list.length * (mt?.duration || 1);
     });
     
-    // EB events (total hours / weeks in term ≈ 16 weeks)
+    // EB events (total hours / weeks in term \u2248 16 weeks)
     const ebTotalHours = ebEvents.reduce((sum, e) => sum + e.hours, 0);
     hours += ebTotalHours / 16;
     
@@ -464,6 +555,7 @@ export default function DonScheduler() {
   const formatHour = (h) => h === 12 ? '12 PM' : h > 12 ? `${h - 12} PM` : h === 0 ? '12 AM' : `${h} AM`;
   const formatTime = (t) => { if (!t) return ''; const [h, m] = t.split(':').map(Number); const hour = h % 12 || 12; return `${hour}:${m.toString().padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
   const formatDate = (dateStr) => { if (!dateStr) return ''; const d = new Date(dateStr); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+  const formatFullDate = (dateStr) => { if (!dateStr) return ''; const d = new Date(dateStr); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
 
   const navigateMonth = (direction) => {
     setSelectedMonth(prev => {
@@ -474,6 +566,41 @@ export default function DonScheduler() {
       return { month: newMonth, year: newYear };
     });
     setSelectedWeek(null);
+  };
+
+  const navigateDodMonth = (direction) => {
+    setSelectedDodMonth(prev => {
+      let newMonth = prev.month + direction;
+      let newYear = prev.year;
+      if (newMonth > 11) { newMonth = 0; newYear++; }
+      if (newMonth < 0) { newMonth = 11; newYear--; }
+      return { month: newMonth, year: newYear };
+    });
+  };
+
+  const navigateConnectionMonth = (direction) => {
+    setSelectedConnectionMonth(prev => {
+      let newMonth = prev.month + direction;
+      let newYear = prev.year;
+      if (newMonth > 11) { newMonth = 0; newYear++; }
+      if (newMonth < 0) { newMonth = 11; newYear--; }
+      return { month: newMonth, year: newYear };
+    });
+    // Update form with existing data if available
+    const newMonthKey = getMonthKey(
+      selectedConnectionMonth.month + direction > 11 ? 0 : selectedConnectionMonth.month + direction < 0 ? 11 : selectedConnectionMonth.month + direction,
+      selectedConnectionMonth.month + direction > 11 ? selectedConnectionMonth.year + 1 : selectedConnectionMonth.month + direction < 0 ? selectedConnectionMonth.year - 1 : selectedConnectionMonth.year
+    );
+    const existing = communityConnections[newMonthKey];
+    if (existing) {
+      setNewConnection({
+        startDate: existing.startDate,
+        dueDate: existing.dueDate,
+        communitySize: existing.communitySize.toString()
+      });
+    } else {
+      setNewConnection({ startDate: '', dueDate: '', communitySize: '' });
+    }
   };
 
   const handleMealDragStart = (day, mealType) => { setDraggedMeal({ day, mealType }); };
@@ -491,6 +618,8 @@ export default function DonScheduler() {
   const monthlyHours = calculateMonthlyHours();
   const weeklyHours = calculateWeeklyHours();
   const connectionsInfo = getConnectionsInfo();
+  const currentDodMonthKey = getMonthKey(selectedDodMonth.month, selectedDodMonth.year);
+  const currentConnectionMonthKey = getMonthKey(selectedConnectionMonth.month, selectedConnectionMonth.year);
 
   const generateCalendarDays = () => {
     const firstDay = new Date(selectedMonth.year, selectedMonth.month, 1);
@@ -511,7 +640,11 @@ export default function DonScheduler() {
       const ebOnDay = ebEvents.filter(e => e.date === dateStr);
       const bteOnDay = bteEvents.filter(e => e.date === dateStr);
       
-      days.push({ day: d, events: dayEvents, classes: dayClasses, dayName, ebOnDay, bteOnDay });
+      // Check for DOD entries on this day
+      const monthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
+      const dodOnDay = (dodMonthlyHours[monthKey] || []).filter(e => e.date === dateStr);
+      
+      days.push({ day: d, events: dayEvents, classes: dayClasses, dayName, ebOnDay, bteOnDay, dodOnDay });
     }
     return days;
   };
@@ -524,55 +657,57 @@ export default function DonScheduler() {
     classes.filter(c => c.day === dayName).forEach(cls => {
       blocks.push({ type: 'class', name: cls.name, start: parseInt(cls.startTime), end: parseInt(cls.endTime), locked: true });
     });
-    
+
     if (dodShifts.includes(dayName)) {
-      blocks.push({ type: 'dod', name: 'Don On Duty', start: 20, end: 23, locked: true });
+      blocks.push({ type: 'dod', name: 'DOD', start: 20, end: 23, locked: true });
     }
-    
+
     Object.entries(meetings).forEach(([type, list]) => {
       list.filter(m => m.day === dayName).forEach(m => {
-        const hour = parseInt(m.time.split(':')[0]);
+        const [h] = m.time.split(':').map(Number);
         const mt = MEETING_TYPES.find(t => t.id === type);
-        blocks.push({ type: 'meeting', name: mt?.name || 'Meeting', start: hour, end: hour + 1, locked: true });
+        blocks.push({ type: 'meeting', name: mt?.name || type, start: h, end: h + (mt?.duration || 1), locked: true });
       });
     });
-    
+
     const meals = weeklyMeals[dayName];
     if (meals) {
-      blocks.push({ type: 'breakfast', name: 'Breakfast', start: meals.breakfast.start, end: meals.breakfast.start + 1, locked: false });
-      blocks.push({ type: 'lunch', name: 'Lunch', start: meals.lunch.start, end: meals.lunch.start + 1, locked: false });
-      blocks.push({ type: 'dinner', name: 'Dinner', start: meals.dinner.start, end: meals.dinner.start + 1, locked: false });
+      Object.entries(meals).forEach(([mealType, meal]) => {
+        blocks.push({ type: mealType, name: mealType.charAt(0).toUpperCase() + mealType.slice(1), start: meal.start, end: meal.start + meal.duration, locked: false });
+      });
     }
-    
-    return blocks;
+
+    return blocks.sort((a, b) => a.start - b.start);
   };
 
-  // Get current/upcoming EB and BTE windows
-  const getCurrentWindows = () => {
-    const today = new Date();
-    const currentEB = ebWindows.find(w => today >= w.openDate && today <= w.closeDate) || ebWindows.find(w => today < w.openDate);
-    const currentBTE = bteWindows.find(w => today >= w.openDate && today <= w.closeDate) || bteWindows.find(w => today < w.openDate);
-    return { currentEB, currentBTE };
+  // Get all saved connection months for display
+  const getSavedConnectionMonths = () => {
+    return Object.keys(communityConnections).sort();
   };
 
-  const { currentEB, currentBTE } = getCurrentWindows();
+  // Get all DOD months with entries
+  const getSavedDodMonths = () => {
+    return Object.keys(dodMonthlyHours).filter(key => dodMonthlyHours[key].length > 0).sort();
+  };
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0a1628 0%, #1a2744 50%, #0d1a2d 100%)', fontFamily: "'Outfit', sans-serif", color: '#e8ecf4', padding: 20 }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 50%, #16213e 100%)', padding: 24, fontFamily: "'Inter', sans-serif", color: '#e0e0e0' }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Fraunces:wght@700;800&display=swap');
-        * { box-sizing: border-box; }
-        .glass-card { background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 28px; margin-bottom: 20px; }
-        .btn-primary { background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); border: none; padding: 14px 28px; border-radius: 12px; color: white; font-weight: 600; font-size: 15px; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(59,130,246,0.3); }
-        .btn-secondary { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); padding: 12px 24px; border-radius: 12px; color: white; font-weight: 500; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s; }
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        .glass-card { background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border-radius: 20px; border: 1px solid rgba(255,255,255,0.06); padding: 28px; margin-bottom: 20px; }
+        .btn-primary { background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: white; border: none; padding: 14px 26px; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: inherit; font-size: 15px; transition: all 0.3s; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(59,130,246,0.3); }
+        .btn-secondary { background: rgba(255,255,255,0.06); color: white; border: 1px solid rgba(255,255,255,0.1); padding: 12px 22px; border-radius: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: inherit; font-size: 14px; transition: all 0.2s; }
         .btn-secondary:hover { background: rgba(255,255,255,0.1); }
-        .btn-add { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); color: #34d399; padding: 10px 18px; border-radius: 10px; font-weight: 600; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
-        .input-field { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 16px; color: white; font-size: 15px; width: 100%; font-family: inherit; }
-        .input-field:focus { outline: none; border-color: #3b82f6; }
-        select.input-field option { background: #1a2744; color: white; }
-        .tag { display: inline-flex; align-items: center; gap: 10px; padding: 8px 14px; border-radius: 20px; margin: 4px; font-size: 13px; font-weight: 500; }
-        .tag button { background: rgba(255,255,255,0.2); border: none; width: 20px; height: 20px; border-radius: 50%; color: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+        .btn-add { background: rgba(59,130,246,0.2); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); padding: 12px 16px; border-radius: 10px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 6px; font-family: inherit; transition: all 0.2s; }
+        .btn-add:hover { background: rgba(59,130,246,0.3); }
+        .btn-danger { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #f87171; padding: 8px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px; }
+        .btn-danger:hover { background: rgba(239,68,68,0.25); }
+        .input-field { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 16px; color: white; font-family: inherit; font-size: 14px; width: 100%; }
+        .input-field:focus { outline: none; border-color: #3b82f6; background: rgba(255,255,255,0.08); }
+        .tag { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; margin: 4px; }
+        .tag button { background: none; border: none; color: inherit; cursor: pointer; opacity: 0.7; font-size: 16px; }
         .tag.class { background: #a8c5e2; color: #2c3e50; }
         .tag.dod { background: #f5d5a0; color: #5d4e37; }
         .tag.meeting { background: #9dd5c8; color: #2d4a44; }
@@ -632,21 +767,28 @@ export default function DonScheduler() {
         .window-dates span { opacity: 0.7; }
         .window-dates strong { color: #60a5fa; }
         
+        .month-folder { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.08); cursor: pointer; transition: all 0.2s; }
+        .month-folder:hover { background: rgba(255,255,255,0.06); }
+        .month-folder.active { border-color: rgba(59,130,246,0.5); background: rgba(59,130,246,0.1); }
+        
+        .dod-entry { display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(245,213,160,0.1); border-radius: 10px; margin-bottom: 8px; }
+        
         .hidden-input { position: absolute; width: 1px; height: 1px; opacity: 0; }
       `}</style>
 
       <input type="file" ref={classInputRef} className="hidden-input" accept=".xlsx,.xls,.csv" onChange={handleClassFileSelect} />
 
       <h1>Don Schedule Manager</h1>
-      <p className="subtitle">Plan your month • Track your hours • Balance your life</p>
+      <p className="subtitle">Plan your month \u2022 Track your hours \u2022 Balance your life</p>
 
       <div className="step-tabs">
         <button className={`step-tab ${step === 1 ? 'active' : classes.length > 0 ? 'completed' : ''}`} onClick={() => setStep(1)}>Classes</button>
-        <button className={`step-tab ${step === 2 ? 'active' : dodShifts.length > 0 ? 'completed' : ''}`} onClick={() => setStep(2)}>DOD</button>
+        <button className={`step-tab ${step === 2 ? 'active' : dodShifts.length > 0 ? 'completed' : ''}`} onClick={() => setStep(2)}>DOD Weekly</button>
+        <button className={`step-tab ${step === 'dod-monthly' ? 'active' : Object.keys(dodMonthlyHours).length > 0 ? 'completed' : ''}`} onClick={() => setStep('dod-monthly')}>DOD Hours</button>
         <button className={`step-tab ${step === 3 ? 'active' : ''}`} onClick={() => setStep(3)}>Meetings</button>
         <button className={`step-tab ${step === 4 ? 'active' : ''}`} onClick={() => setStep(4)}>RLM Events</button>
         <button className={`step-tab ${step === 5 ? 'active' : ebEvents.length > 0 || bteEvents.length > 0 ? 'completed' : ''}`} onClick={() => setStep(5)}>EB & BTE</button>
-        <button className={`step-tab ${step === 6 ? 'active' : ''}`} onClick={() => setStep(6)}>Connections</button>
+        <button className={`step-tab ${step === 6 ? 'active' : Object.keys(communityConnections).length > 0 ? 'completed' : ''}`} onClick={() => setStep(6)}>Connections</button>
         <button className={`step-tab ${step === 7 ? 'active' : ''}`} onClick={() => setStep(7)}>Schedule</button>
       </div>
 
@@ -663,8 +805,8 @@ export default function DonScheduler() {
           </div>
 
           {uploadStatus && (
-            <div style={{ padding: 14, background: uploadStatus.startsWith('✓') ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', borderRadius: 10, marginBottom: 16, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-              {uploadStatus.startsWith('✓') ? <Check size={16} style={{ color: '#34d399' }} /> : <AlertCircle size={16} style={{ color: '#fbbf24' }} />}
+            <div style={{ padding: 14, background: uploadStatus.startsWith('\u2713') ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', borderRadius: 10, marginBottom: 16, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {uploadStatus.startsWith('\u2713') ? <Check size={16} style={{ color: '#34d399' }} /> : <AlertCircle size={16} style={{ color: '#fbbf24' }} />}
               {uploadStatus}
             </div>
           )}
@@ -698,8 +840,8 @@ export default function DonScheduler() {
               <div style={{ display: 'flex', flexWrap: 'wrap' }}>
                 {classes.map(cls => (
                   <span key={cls.id} className="tag class">
-                    {cls.name} • {cls.day.slice(0,3)} {formatHour(parseInt(cls.startTime))}-{formatHour(parseInt(cls.endTime))}
-                    <button onClick={() => setClasses(classes.filter(c => c.id !== cls.id))}>×</button>
+                    {cls.name} \u2022 {cls.day.slice(0,3)} {formatHour(parseInt(cls.startTime))}-{formatHour(parseInt(cls.endTime))}
+                    <button onClick={() => setClasses(classes.filter(c => c.id !== cls.id))}>\u00d7</button>
                   </span>
                 ))}
               </div>
@@ -713,11 +855,11 @@ export default function DonScheduler() {
         </div>
       )}
 
-      {/* Step 2: DOD */}
+      {/* Step 2: DOD Weekly Recurring */}
       {step === 2 && (
         <div className="glass-card" style={{ maxWidth: 800, margin: '0 auto' }}>
-          <h2><Clock size={24} /> DOD Shifts</h2>
-          <p className="section-desc">Which nights do you have Don On Duty? (~3h each, 8-11pm)</p>
+          <h2><Clock size={24} /> DOD Weekly Shifts</h2>
+          <p className="section-desc">Which nights do you typically have Don On Duty? (~3h each, 8-11pm)</p>
           
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
             <select className="input-field" value={newDodDay} onChange={e => setNewDodDay(e.target.value)} style={{ flex: 1 }}>
@@ -729,7 +871,7 @@ export default function DonScheduler() {
           {dodShifts.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap' }}>
               {dodShifts.map(day => (
-                <span key={day} className="tag dod">{day}<button onClick={() => setDodShifts(dodShifts.filter(d => d !== day))}>×</button></span>
+                <span key={day} className="tag dod">{day}<button onClick={() => setDodShifts(dodShifts.filter(d => d !== day))}>\u00d7</button></span>
               ))}
             </div>
           )}
@@ -737,9 +879,139 @@ export default function DonScheduler() {
           <div style={{ marginTop: 20, padding: 16, background: 'rgba(245,213,160,0.1)', borderRadius: 12 }}>
             <Target size={18} style={{ color: '#f5d5a0' }} /> <strong>Weekly DOD: {dodShifts.length * 3}h</strong> ({dodShifts.length} shifts)
           </div>
+
+          <div style={{ marginTop: 16, padding: 14, background: 'rgba(59,130,246,0.1)', borderRadius: 10, fontSize: 13 }}>
+            <strong>\ud83d\udca1 Tip:</strong> Use "DOD Hours" tab to track actual hours for each month with specific dates.
+          </div>
           
           <div className="nav-buttons">
             <button className="btn-secondary" onClick={() => setStep(1)}><ChevronLeft size={20} /> Back</button>
+            <button className="btn-primary" onClick={() => setStep('dod-monthly')}>Continue <ChevronRight size={20} /></button>
+          </div>
+        </div>
+      )}
+
+      {/* DOD Monthly Hours - NEW */}
+      {step === 'dod-monthly' && (
+        <div className="glass-card" style={{ maxWidth: 900, margin: '0 auto' }}>
+          <h2><Clock size={24} /> DOD Monthly Hours</h2>
+          <p className="section-desc">Track your actual Don On Duty hours by month with flexible dates and times</p>
+
+          <div className="month-nav">
+            <button className="month-nav-btn" onClick={() => navigateDodMonth(-1)}><ArrowLeft size={18} /></button>
+            <h3 style={{ margin: 0 }}>{MONTHS[selectedDodMonth.month]} {selectedDodMonth.year}</h3>
+            <button className="month-nav-btn" onClick={() => navigateDodMonth(1)}><ArrowRight size={18} /></button>
+          </div>
+
+          {/* Add new DOD entry */}
+          <div style={{ padding: 18, background: 'rgba(245,213,160,0.1)', borderRadius: 12, marginBottom: 20, border: '1px solid rgba(245,213,160,0.2)' }}>
+            <div style={{ fontWeight: 600, marginBottom: 14, fontSize: 14 }}>Add DOD Shift</div>
+            <div className="form-row">
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display: 'block' }}>Date</label>
+                <input 
+                  type="date" 
+                  className="input-field" 
+                  value={newDodEntry.date}
+                  onChange={e => setNewDodEntry({ ...newDodEntry, date: e.target.value })}
+                />
+              </div>
+              <div style={{ width: 120 }}>
+                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display: 'block' }}>Start Time</label>
+                <input 
+                  type="time" 
+                  className="input-field" 
+                  value={newDodEntry.startTime}
+                  onChange={e => setNewDodEntry({ ...newDodEntry, startTime: e.target.value })}
+                />
+              </div>
+              <div style={{ width: 120 }}>
+                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 4, display: 'block' }}>End Time</label>
+                <input 
+                  type="time" 
+                  className="input-field" 
+                  value={newDodEntry.endTime}
+                  onChange={e => setNewDodEntry({ ...newDodEntry, endTime: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-row" style={{ marginBottom: 0 }}>
+              <input 
+                className="input-field" 
+                placeholder="Notes (optional)" 
+                value={newDodEntry.notes}
+                onChange={e => setNewDodEntry({ ...newDodEntry, notes: e.target.value })}
+                style={{ flex: 1 }}
+              />
+              <button className="btn-add" onClick={addDodEntry}><Plus size={18} /> Add</button>
+            </div>
+          </div>
+
+          {/* DOD entries for current month */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>
+              {MONTHS[selectedDodMonth.month]} Shifts ({(dodMonthlyHours[currentDodMonthKey] || []).length})
+            </div>
+            
+            {(dodMonthlyHours[currentDodMonthKey] || []).length === 0 ? (
+              <div style={{ padding: 30, textAlign: 'center', opacity: 0.5, background: 'rgba(255,255,255,0.03)', borderRadius: 12 }}>
+                No DOD shifts recorded for this month
+              </div>
+            ) : (
+              (dodMonthlyHours[currentDodMonthKey] || []).map(entry => (
+                <div key={entry.id} className="dod-entry">
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{formatFullDate(entry.date)}</div>
+                    <div style={{ fontSize: 13, opacity: 0.7 }}>
+                      {formatTime(entry.startTime)} - {formatTime(entry.endTime)} \u2022 <strong>{entry.hours}h</strong>
+                      {entry.notes && <span> \u2022 {entry.notes}</span>}
+                    </div>
+                  </div>
+                  <button className="btn-danger" onClick={() => removeDodEntry(currentDodMonthKey, entry.id)}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Monthly total */}
+          <div style={{ padding: 16, background: 'linear-gradient(135deg, rgba(245,213,160,0.15), rgba(245,213,160,0.05))', borderRadius: 12, marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600 }}>{MONTHS[selectedDodMonth.month]} Total</span>
+              <span style={{ fontSize: 24, fontWeight: 700, color: '#f5d5a0' }}>{getDodMonthTotal(currentDodMonthKey).toFixed(1)}h</span>
+            </div>
+          </div>
+
+          {/* Saved months overview */}
+          {getSavedDodMonths().length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>All Months with DOD Hours</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {getSavedDodMonths().map(monthKey => {
+                  const [year, month] = monthKey.split('-').map(Number);
+                  const total = getDodMonthTotal(monthKey);
+                  return (
+                    <div 
+                      key={monthKey}
+                      onClick={() => setSelectedDodMonth({ month: month - 1, year })}
+                      className={`month-folder ${currentDodMonthKey === monthKey ? 'active' : ''}`}
+                      style={{ minWidth: 140 }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Folder size={16} style={{ color: '#f5d5a0' }} />
+                        <span style={{ fontWeight: 500 }}>{MONTHS[month - 1]} {year}</span>
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>{total.toFixed(1)} hours</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          <div className="nav-buttons">
+            <button className="btn-secondary" onClick={() => setStep(2)}><ChevronLeft size={20} /> Back</button>
             <button className="btn-primary" onClick={() => setStep(3)}>Continue <ChevronRight size={20} /></button>
           </div>
         </div>
@@ -772,7 +1044,7 @@ export default function DonScheduler() {
                   {meetings[mt.id].map(m => (
                     <span key={m.id} className="tag meeting" style={{ background: mt.color }}>
                       {m.day} @ {formatTime(m.time)}
-                      <button onClick={() => setMeetings(prev => ({ ...prev, [mt.id]: prev[mt.id].filter(x => x.id !== m.id) }))}>×</button>
+                      <button onClick={() => setMeetings(prev => ({ ...prev, [mt.id]: prev[mt.id].filter(x => x.id !== m.id) }))}>\u00d7</button>
                     </span>
                   ))}
                 </div>
@@ -781,7 +1053,7 @@ export default function DonScheduler() {
           ))}
           
           <div className="nav-buttons">
-            <button className="btn-secondary" onClick={() => setStep(2)}><ChevronLeft size={20} /> Back</button>
+            <button className="btn-secondary" onClick={() => setStep('dod-monthly')}><ChevronLeft size={20} /> Back</button>
             <button className="btn-primary" onClick={() => setStep(4)}>Continue <ChevronRight size={20} /></button>
           </div>
         </div>
@@ -815,7 +1087,7 @@ export default function DonScheduler() {
           )}
 
           <div style={{ padding: 14, background: 'rgba(59,130,246,0.1)', borderRadius: 12, marginTop: 20 }}>
-            <strong>Selected:</strong> {countSelectedByCategory('fnh')} FNH • {countSelectedByCategory('meeting')} Meetings • {countSelectedByCategory('event')} Events
+            <strong>Selected:</strong> {countSelectedByCategory('fnh')} FNH \u2022 {countSelectedByCategory('meeting')} Meetings \u2022 {countSelectedByCategory('event')} Events
           </div>
           
           <div className="nav-buttons">
@@ -847,8 +1119,8 @@ export default function DonScheduler() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', marginBottom: 10 }}>
                     {ebEvents.filter(e => e.windowNum === window.num).map(e => (
                       <span key={e.id} className="tag eb">
-                        {formatDate(e.date)} • {e.hours}h
-                        <button onClick={() => setEbEvents(ebEvents.filter(x => x.id !== e.id))}>×</button>
+                        {formatDate(e.date)} \u2022 {e.hours}h
+                        <button onClick={() => setEbEvents(ebEvents.filter(x => x.id !== e.id))}>\u00d7</button>
                       </span>
                     ))}
                   </div>
@@ -895,8 +1167,8 @@ export default function DonScheduler() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', marginBottom: 10 }}>
                     {bteEvents.filter(e => e.windowNum === window.num).map(e => (
                       <span key={e.id} className="tag bte">
-                        {formatDate(e.date)} • {e.hours}h
-                        <button onClick={() => setBteEvents(bteEvents.filter(x => x.id !== e.id))}>×</button>
+                        {formatDate(e.date)} \u2022 {e.hours}h
+                        <button onClick={() => setBteEvents(bteEvents.filter(x => x.id !== e.id))}>\u00d7</button>
                       </span>
                     ))}
                   </div>
@@ -943,53 +1215,157 @@ export default function DonScheduler() {
         </div>
       )}
 
-      {/* Step 6: Community Connections */}
+      {/* Step 6: Community Connections - RLM Aligned */}
       {step === 6 && (
-        <div className="glass-card" style={{ maxWidth: 800, margin: '0 auto' }}>
-          <h2><Users size={24} /> Community Connections</h2>
-          <p className="section-desc">Track your 1:1 connections with residents - best done during DOD!</p>
-          
-          <div className="form-row">
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 6, display: 'block' }}>Community Size</label>
-              <input className="input-field" type="number" placeholder="e.g., 40" value={communitySize} onChange={e => setCommunitySize(e.target.value)} />
+        <div className="glass-card" style={{ maxWidth: 900, margin: '0 auto' }}>
+          <h2><Users size={24} /> Community Connections (RLM)</h2>
+          <p className="section-desc">Track your 1:1 connections with residents by month - aligned with the Residence Learning Model</p>
+
+          {/* Month navigation */}
+          <div className="month-nav">
+            <button className="month-nav-btn" onClick={() => navigateConnectionMonth(-1)}><ArrowLeft size={18} /></button>
+            <h3 style={{ margin: 0 }}>{MONTHS[selectedConnectionMonth.month]} {selectedConnectionMonth.year}</h3>
+            <button className="month-nav-btn" onClick={() => navigateConnectionMonth(1)}><ArrowRight size={18} /></button>
+          </div>
+
+          {/* Current month form */}
+          <div style={{ padding: 20, background: 'linear-gradient(135deg, rgba(197,179,217,0.15), rgba(139,92,246,0.1))', border: '1px solid rgba(197,179,217,0.3)', borderRadius: 14, marginBottom: 20 }}>
+            <div style={{ fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Folder size={18} style={{ color: '#c5b3d9' }} />
+              {MONTHS[selectedConnectionMonth.month]} {selectedConnectionMonth.year} Community Connections
             </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 6, display: 'block' }}>Deadline</label>
-              <input className="input-field" type="date" value={connectionDeadline} onChange={e => setConnectionDeadline(e.target.value)} />
+
+            <div className="form-row">
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 6, display: 'block' }}>Start Date</label>
+                <input 
+                  className="input-field" 
+                  type="date" 
+                  value={communityConnections[currentConnectionMonthKey]?.startDate || newConnection.startDate} 
+                  onChange={e => setNewConnection({ ...newConnection, startDate: e.target.value })}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 6, display: 'block' }}>Due Date</label>
+                <input 
+                  className="input-field" 
+                  type="date" 
+                  value={communityConnections[currentConnectionMonthKey]?.dueDate || newConnection.dueDate} 
+                  onChange={e => setNewConnection({ ...newConnection, dueDate: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-row" style={{ marginBottom: 16 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 12, opacity: 0.6, marginBottom: 6, display: 'block' }}>How many people are in your community?</label>
+                <input 
+                  className="input-field" 
+                  type="number" 
+                  placeholder="e.g., 40 residents" 
+                  value={communityConnections[currentConnectionMonthKey]?.communitySize || newConnection.communitySize} 
+                  onChange={e => setNewConnection({ ...newConnection, communitySize: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button className="btn-add" onClick={saveConnectionMonth}>
+                <Check size={18} /> {communityConnections[currentConnectionMonthKey] ? 'Update' : 'Save'} Month
+              </button>
+              {communityConnections[currentConnectionMonthKey] && (
+                <button className="btn-danger" onClick={() => deleteConnectionMonth(currentConnectionMonthKey)}>
+                  <Trash2 size={14} /> Delete
+                </button>
+              )}
             </div>
           </div>
 
-          {connectionsInfo && (
-            <div style={{ background: 'linear-gradient(135deg, rgba(197,179,217,0.15), rgba(139,92,246,0.1))', border: '1px solid rgba(197,179,217,0.3)', borderRadius: 14, padding: 20, marginTop: 20 }}>
+          {/* Connection calculations */}
+          {communityConnections[currentConnectionMonthKey] && (
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 20, marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                 <Target size={24} style={{ color: '#c5b3d9' }} />
                 <div>
-                  <div style={{ fontSize: 20, fontWeight: 700 }}>{connectionsInfo.total} Connections</div>
-                  <div style={{ fontSize: 13, opacity: 0.7 }}>{connectionsInfo.daysLeft} days / {connectionsInfo.weeksLeft} weeks left</div>
+                  <div style={{ fontSize: 20, fontWeight: 700 }}>{communityConnections[currentConnectionMonthKey].communitySize} Connections</div>
+                  <div style={{ fontSize: 13, opacity: 0.7 }}>
+                    {formatFullDate(communityConnections[currentConnectionMonthKey].startDate)} \u2192 {formatFullDate(communityConnections[currentConnectionMonthKey].dueDate)}
+                  </div>
                 </div>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                <div style={{ background: 'rgba(255,255,255,0.1)', padding: 14, borderRadius: 10, textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: '#c5b3d9' }}>{connectionsInfo.perWeek}</div>
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>per week</div>
-                </div>
-                <div style={{ background: 'rgba(255,255,255,0.1)', padding: 14, borderRadius: 10, textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: '#f5d5a0' }}>{connectionsInfo.perShift}</div>
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>per DOD shift</div>
-                </div>
-                <div style={{ background: 'rgba(255,255,255,0.1)', padding: 14, borderRadius: 10, textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700 }}>{connectionsInfo.totalShifts}</div>
-                  <div style={{ fontSize: 11, opacity: 0.7 }}>total shifts</div>
-                </div>
-              </div>
+              {(() => {
+                const data = communityConnections[currentConnectionMonthKey];
+                const start = new Date(data.startDate);
+                const deadline = new Date(data.dueDate);
+                const today = new Date();
+                const daysLeft = Math.max(0, Math.ceil((deadline - today) / (1000 * 60 * 60 * 24)));
+                const weeksLeft = Math.max(1, Math.ceil(daysLeft / 7));
+                const totalDodShifts = Math.max(1, dodShifts.length * weeksLeft);
+                const perWeek = Math.ceil(data.communitySize / weeksLeft);
+                const perShift = Math.ceil(data.communitySize / totalDodShifts);
+                
+                return (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                      <div style={{ background: 'rgba(255,255,255,0.1)', padding: 14, borderRadius: 10, textAlign: 'center' }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: '#c5b3d9' }}>{perWeek}</div>
+                        <div style={{ fontSize: 11, opacity: 0.7 }}>per week</div>
+                      </div>
+                      <div style={{ background: 'rgba(255,255,255,0.1)', padding: 14, borderRadius: 10, textAlign: 'center' }}>
+                        <div style={{ fontSize: 22, fontWeight: 700, color: '#f5d5a0' }}>{perShift}</div>
+                        <div style={{ fontSize: 11, opacity: 0.7 }}>per DOD shift</div>
+                      </div>
+                      <div style={{ background: 'rgba(255,255,255,0.1)', padding: 14, borderRadius: 10, textAlign: 'center' }}>
+                        <div style={{ fontSize: 22, fontWeight: 700 }}>{daysLeft}</div>
+                        <div style={{ fontSize: 11, opacity: 0.7 }}>days left</div>
+                      </div>
+                    </div>
 
-              {dodShifts.length > 0 && (
-                <div style={{ marginTop: 16, padding: 12, background: 'rgba(245,213,160,0.15)', borderRadius: 8, fontSize: 13 }}>
-                  <strong>💡 Tip:</strong> Do {connectionsInfo.perShift} connections each DOD shift ({dodShifts.join(', ')})!
-                </div>
-              )}
+                    {dodShifts.length > 0 && (
+                      <div style={{ marginTop: 16, padding: 12, background: 'rgba(245,213,160,0.15)', borderRadius: 8, fontSize: 13 }}>
+                        <strong>\ud83d\udca1 Tip:</strong> Do {perShift} connections each DOD shift ({dodShifts.join(', ')})!
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* All saved months */}
+          {getSavedConnectionMonths().length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>All Saved Months</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+                {getSavedConnectionMonths().map(monthKey => {
+                  const [year, month] = monthKey.split('-').map(Number);
+                  const data = communityConnections[monthKey];
+                  return (
+                    <div 
+                      key={monthKey}
+                      onClick={() => {
+                        setSelectedConnectionMonth({ month: month - 1, year });
+                        setNewConnection({
+                          startDate: data.startDate,
+                          dueDate: data.dueDate,
+                          communitySize: data.communitySize.toString()
+                        });
+                      }}
+                      className={`month-folder ${currentConnectionMonthKey === monthKey ? 'active' : ''}`}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <Folder size={16} style={{ color: '#c5b3d9' }} />
+                        <span style={{ fontWeight: 600 }}>{MONTHS[month - 1]} {year}</span>
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.7 }}>
+                        <div>{data.communitySize} people</div>
+                        <div>Due: {formatDate(data.dueDate)}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
           
@@ -1023,8 +1399,8 @@ export default function DonScheduler() {
               <div className="hours-label">Classes</div>
             </div>
             <div className="hours-card">
-              <div className="hours-value" style={{ color: '#f5d5a0' }}>{selectedWeek === null ? monthlyHours.donHours.toFixed(1) : weeklyHours.donHours.toFixed(1)}h</div>
-              <div className="hours-label">Don Duties</div>
+              <div className="hours-value" style={{ color: '#f5d5a0' }}>{getDodMonthTotal(getMonthKey(selectedMonth.month, selectedMonth.year)).toFixed(1)}h</div>
+              <div className="hours-label">DOD (Month)</div>
             </div>
             <div className="hours-card">
               <div className="hours-value" style={{ color: '#ffd699' }}>{ebEvents.reduce((s, e) => s + e.hours, 0)}h</div>
@@ -1042,12 +1418,26 @@ export default function DonScheduler() {
             </div>
           </div>
 
-          {connectionsInfo && dodShifts.length > 0 && (
-            <div style={{ padding: 10, background: 'rgba(197,179,217,0.1)', borderRadius: 10, marginBottom: 20, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Users size={16} style={{ color: '#c5b3d9' }} />
-              <span><strong>Connections:</strong> ~{connectionsInfo.perShift} during each DOD shift</span>
-            </div>
-          )}
+          {/* Connection info for current schedule month */}
+          {(() => {
+            const scheduleMonthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
+            const connectionData = communityConnections[scheduleMonthKey];
+            if (connectionData && dodShifts.length > 0) {
+              const deadline = new Date(connectionData.dueDate);
+              const today = new Date();
+              const daysLeft = Math.max(0, Math.ceil((deadline - today) / (1000 * 60 * 60 * 24)));
+              const weeksLeft = Math.max(1, Math.ceil(daysLeft / 7));
+              const perShift = Math.ceil(connectionData.communitySize / Math.max(1, dodShifts.length * weeksLeft));
+              
+              return (
+                <div style={{ padding: 10, background: 'rgba(197,179,217,0.1)', borderRadius: 10, marginBottom: 20, fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Users size={16} style={{ color: '#c5b3d9' }} />
+                  <span><strong>Connections:</strong> ~{perShift} during each DOD shift ({connectionData.communitySize} total, due {formatDate(connectionData.dueDate)})</span>
+                </div>
+              );
+            }
+            return null;
+          })()}
 
           {selectedWeek === null ? (
             <>
@@ -1066,6 +1456,9 @@ export default function DonScheduler() {
                         {dayData.dayName && dodShifts.includes(dayData.dayName) && (
                           <div className="calendar-event" style={{ background: BLOCK_COLORS.dod.bg, color: BLOCK_COLORS.dod.text }}>DOD</div>
                         )}
+                        {dayData.dodOnDay?.map((e, i) => (
+                          <div key={i} className="calendar-event" style={{ background: BLOCK_COLORS.dod.bg, color: BLOCK_COLORS.dod.text }}>DOD {e.hours}h</div>
+                        ))}
                         {dayData.ebOnDay?.map((e, i) => (
                           <div key={i} className="calendar-event" style={{ background: BLOCK_COLORS.eb.bg, color: BLOCK_COLORS.eb.text }}>EB {e.hours}h</div>
                         ))}
@@ -1091,7 +1484,7 @@ export default function DonScheduler() {
                         {week.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {week.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       </div>
                     </div>
-                    <div style={{ fontSize: 13, color: '#60a5fa' }}>View →</div>
+                    <div style={{ fontSize: 13, color: '#60a5fa' }}>View \u2192</div>
                   </div>
                 </div>
               ))}
@@ -1155,12 +1548,26 @@ export default function DonScheduler() {
                     ))}
                   </div>
 
-                  {connectionsInfo && (
-                    <div style={{ marginTop: 20, padding: 14, background: 'rgba(197,179,217,0.1)', borderRadius: 10, fontSize: 13 }}>
-                      <strong>🎯 This Week:</strong> {connectionsInfo.perWeek} connections
-                      {dodShifts.length > 0 && <span> ({connectionsInfo.perShift} per DOD on {dodShifts.join(', ')})</span>}
-                    </div>
-                  )}
+                  {(() => {
+                    const scheduleMonthKey = getMonthKey(selectedMonth.month, selectedMonth.year);
+                    const connectionData = communityConnections[scheduleMonthKey];
+                    if (connectionData) {
+                      const deadline = new Date(connectionData.dueDate);
+                      const today = new Date();
+                      const daysLeft = Math.max(0, Math.ceil((deadline - today) / (1000 * 60 * 60 * 24)));
+                      const weeksLeft = Math.max(1, Math.ceil(daysLeft / 7));
+                      const perWeek = Math.ceil(connectionData.communitySize / weeksLeft);
+                      const perShift = Math.ceil(connectionData.communitySize / Math.max(1, dodShifts.length * weeksLeft));
+                      
+                      return (
+                        <div style={{ marginTop: 20, padding: 14, background: 'rgba(197,179,217,0.1)', borderRadius: 10, fontSize: 13 }}>
+                          <strong>\ud83c\udfaf This Week:</strong> {perWeek} connections
+                          {dodShifts.length > 0 && <span> ({perShift} per DOD on {dodShifts.join(', ')})</span>}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </>
               );
             })()
