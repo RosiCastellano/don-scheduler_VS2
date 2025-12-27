@@ -398,6 +398,12 @@ export default function DonScheduler() {
     return { total: size, daysLeft, weeksLeft, perWeek: connectionsPerWeek, perShift: connectionsPerShift, totalShifts: totalDodShifts };
   };
 
+  const countSelectedByCategory = (category) => {
+    return Object.entries(RLM_EVENTS_DATA).reduce((count, [monthKey, events]) => {
+      return count + events.filter((e, idx) => e.category === category && selectedRLMEvents[`${monthKey}-${idx}`]).length;
+    }, 0);
+  };
+
   // Calculate total don hours
   const calculateDonHours = () => {
     let hours = 0;
@@ -511,12 +517,6 @@ export default function DonScheduler() {
   };
 
   const calendarDays = generateCalendarDays();
-
-  const countSelectedByCategory = (category) => {
-    return Object.entries(RLM_EVENTS_DATA).reduce((count, [monthKey, events]) => {
-      return count + events.filter((e, idx) => e.category === category && selectedRLMEvents[`${monthKey}-${idx}`]).length;
-    }, 0);
-  };
 
   const getDayBlocks = (dayName) => {
     const blocks = [];
