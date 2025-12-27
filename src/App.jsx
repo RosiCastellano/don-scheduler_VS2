@@ -648,7 +648,7 @@ export default function DonScheduler() {
     return Object.keys(communityConnections).sort();
   };
 
-  // Excel parsing
+  // Excel/CSV parsing - handles multiple formats
   const parseExcelFile = (file) => {
     setUploadStatus('Processing...');
     const reader = new FileReader();
@@ -660,20 +660,77 @@ export default function DonScheduler() {
         const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
         
         const parsed = [];
-        json.slice(1).forEach(row => {
-          if (row.length >= 4) {
-            const name = row[0]?.toString().trim();
-            const dayStr = row[1]?.toString().trim();
-            const startStr = row[2]?.toString();
-            const endStr = row[3]?.toString();
-            
-            const day = normalizeDay(dayStr);
-            const startTime = parseTimeToHour(startStr);
-            const endTime = parseTimeToHour(endStr);
-            
-            if (name && day && startTime !== null && endTime !== null) {
-              parsed.push({ name, day, startTime, endTime });
+        
+        // Detect format by looking for header row
+        let startRow = 0;
+        let format = 'unknown';
+        
+        for (let i = 0; i < Math.min(json.length, 5); i++) {
+          const row = json[i];
+          if (!row || row.length < 2) continue;
+          
+          const firstCell = row[0]?.toString().toLowerCase().trim();
+          const secondCell = row[1]?.toString().toLowerCase().trim();
+          
+          // Format 1: Day, Start Time, End Time, Course (user's format)
+          if (firstCell === 'day' && (secondCell === 'start time' || secondCell === 'start')) {
+            startRow = i + 1;
+            format = 'day-first';
+            break;
+          }
+          // Format 2: Name/Course, Day, Start, End (original format)
+          if ((firstCell === 'name' || firstCell === 'course' || firstCell === 'class') && 
+              (secondCell === 'day' || secondCell === 'days')) {
+            startRow = i + 1;
+            format = 'name-first';
+            break;
+          }
+        }
+        
+        // If no header found, try to auto-detect from first data row
+        if (format === 'unknown') {
+          startRow = 1; // Skip first row (might be a title)
+          // Check if first column looks like a day
+          const firstDataRow = json[startRow];
+          if (firstDataRow && firstDataRow[0]) {
+            const firstVal = firstDataRow[0].toString().trim();
+            if (normalizeDay(firstVal)) {
+              format = 'day-first';
+            } else {
+              format = 'name-first';
             }
+          }
+        }
+        
+        json.slice(startRow).forEach(row => {
+          if (!row || row.length < 3) return;
+          
+          // Skip empty rows or rows with just whitespace/quotes
+          const hasContent = row.some(cell => cell && cell.toString().trim().length > 1);
+          if (!hasContent) return;
+          
+          let name, dayStr, startStr, endStr;
+          
+          if (format === 'day-first') {
+            // Day, Start Time, End Time, Course
+            dayStr = row[0]?.toString().trim();
+            startStr = row[1]?.toString();
+            endStr = row[2]?.toString();
+            name = row[3]?.toString().trim();
+          } else {
+            // Name, Day, Start, End
+            name = row[0]?.toString().trim();
+            dayStr = row[1]?.toString().trim();
+            startStr = row[2]?.toString();
+            endStr = row[3]?.toString();
+          }
+          
+          const day = normalizeDay(dayStr);
+          const startTime = parseTimeToHour(startStr);
+          const endTime = parseTimeToHour(endStr);
+          
+          if (name && day && startTime !== null && endTime !== null) {
+            parsed.push({ name, day, startTime, endTime });
           }
         });
         
@@ -681,7 +738,7 @@ export default function DonScheduler() {
           setClasses(prev => [...prev, ...parsed]);
           setUploadStatus(`Added ${parsed.length} classes`);
         } else {
-          setUploadStatus('No valid classes found');
+          setUploadStatus('No valid classes found. Check format: Day, Start Time, End Time, Course');
         }
       } catch (err) {
         setUploadStatus('Error reading file');
@@ -1032,7 +1089,7 @@ export default function DonScheduler() {
           <div className={`upload-zone ${isDraggingClass ? 'dragging' : ''}`} onClick={() => classInputRef.current?.click()} onDragOver={(e) => { e.preventDefault(); setIsDraggingClass(true); }} onDragLeave={() => setIsDraggingClass(false)} onDrop={handleClassDrop} style={{ marginBottom: 20 }}>
             <Upload size={32} style={{ marginBottom: 10, opacity: 0.5 }} />
             <p>Drop Excel/CSV file or click to upload</p>
-            <p style={{ fontSize: '0.8rem', color: '#9ca3af', marginTop: 5 }}>Format: Class Name, Day, Start Time, End Time</p>
+            <p style={{ fontSize: '0.8rem', color: '#9ca3af', marginTop: 5 }}>Format: Day, Start Time, End Time, Course</p>
             <input ref={classInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={(e) => e.target.files[0] && parseExcelFile(e.target.files[0])} />
           </div>
           {uploadStatus && <p style={{ marginBottom: 15, color: '#34d399' }}>{uploadStatus}</p>}
