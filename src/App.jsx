@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Upload, Plus, X, Calendar, Clock, Users, BookOpen, Image, ChevronRight, ChevronLeft, GripVertical, Lock, PartyPopper, UserCheck, Trash2, MessageCircle, Eye, Check, AlertCircle, Target, TrendingUp, CalendarDays, ArrowLeft, ArrowRight, Layers, FileText } from 'lucide-react';
+import { Upload, Plus, X, Calendar, Clock, Users, BookOpen, Image, ChevronRight, ChevronLeft, GripVertical, Lock, PartyPopper, UserCheck, Trash2, MessageCircle, Eye, Check, AlertCircle, Target, TrendingUp, CalendarDays, ArrowLeft, ArrowRight, Layers, FileText, FileSpreadsheet, Table } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const HOURS = Array.from({ length: 17 }, (_, i) => i + 7);
@@ -177,7 +178,8 @@ export default function DonScheduler() {
   const [step, setStep] = useState(1);
   const [classes, setClasses] = useState([]);
   const [newClass, setNewClass] = useState({ name: '', day: 'Monday', startTime: '9', endTime: '10' });
-  const [classImages, setClassImages] = useState([]);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const [uploadStatus, setUploadStatus] = useState('');
   const [rlmImage, setRlmImage] = useState(null);
   const [dodShifts, setDodShifts] = useState([]);
   const [newDodDay, setNewDodDay] = useState('Monday');
@@ -281,15 +283,122 @@ export default function DonScheduler() {
   };
 
   const handleClassFileSelect = (e) => {
-    const files = Array.from(e.target.files || []);
-    files.forEach(file => {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (e) => setClassImages(prev => [...prev, { data: e.target.result, name: file.name }]);
-        reader.readAsDataURL(file);
-      }
-    });
+    const file = e.target.files?.[0];
+    if (file) {
+      parseExcelFile(file);
+    }
     if (classInputRef.current) classInputRef.current.value = '';
+  };
+
+  // Parse time string like "11:00 AM" or "1:00 PM" to 24-hour number
+  const parseTimeToHour = (timeStr) => {
+    if (!timeStr) return null;
+    const cleanTime = timeStr.toString().trim().toUpperCase();
+    const match = cleanTime.match(/(\d{1,2}):?(\d{2})?\s*(AM|PM)?/i);
+    if (!match) return null;
+    
+    let hour = parseInt(match[1]);
+    const period = match[3];
+    
+    if (period === 'PM' && hour !== 12) hour += 12;
+    if (period === 'AM' && hour === 12) hour = 0;
+    
+    return hour;
+  };
+
+  // Normalize day name
+  const normalizeDay = (dayStr) => {
+    if (!dayStr) return null;
+    const day = dayStr.toString().trim().toLowerCase();
+    const dayMap = {
+      'monday': 'Monday', 'mon': 'Monday', 'm': 'Monday',
+      'tuesday': 'Tuesday', 'tue': 'Tuesday', 'tu': 'Tuesday', 't': 'Tuesday',
+      'wednesday': 'Wednesday', 'wed': 'Wednesday', 'w': 'Wednesday',
+      'thursday': 'Thursday', 'thu': 'Thursday', 'th': 'Thursday', 'r': 'Thursday',
+      'friday': 'Friday', 'fri': 'Friday', 'f': 'Friday',
+      'saturday': 'Saturday', 'sat': 'Saturday', 's': 'Saturday',
+      'sunday': 'Sunday', 'sun': 'Sunday', 'u': 'Sunday',
+    };
+    return dayMap[day] || null;
+  };
+
+  // Parse Excel file
+  const parseExcelFile = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        
+        // Find header row and column indices
+        let headerRowIndex = 0;
+        let dayCol = -1, startCol = -1, endCol = -1, courseCol = -1;
+        
+        for (let i = 0; i < Math.min(5, jsonData.length); i++) {
+          const row = jsonData[i];
+          if (!row) continue;
+          
+          for (let j = 0; j < row.length; j++) {
+            const cell = (row[j] || '').toString().toLowerCase().trim();
+            if (cell.includes('day')) dayCol = j;
+            if (cell.includes('start')) startCol = j;
+            if (cell.includes('end')) endCol = j;
+            if (cell.includes('course') || cell.includes('class') || cell.includes('name')) courseCol = j;
+          }
+          
+          if (dayCol >= 0 && startCol >= 0 && endCol >= 0) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+        
+        // If no headers found, assume first row is data with columns: Day, Start, End, Course
+        if (dayCol < 0) {
+          dayCol = 0;
+          startCol = 1;
+          endCol = 2;
+          courseCol = 3;
+          headerRowIndex = -1;
+        }
+        
+        // Parse data rows
+        const parsedClasses = [];
+        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row || row.length === 0) continue;
+          
+          const day = normalizeDay(row[dayCol]);
+          const startTime = parseTimeToHour(row[startCol]);
+          const endTime = parseTimeToHour(row[endCol]);
+          const courseName = courseCol >= 0 ? (row[courseCol] || '').toString().trim() : `Class ${i}`;
+          
+          if (day && startTime !== null && endTime !== null && courseName) {
+            parsedClasses.push({
+              id: Date.now() + i,
+              name: courseName,
+              day: day,
+              startTime: startTime.toString(),
+              endTime: endTime.toString()
+            });
+          }
+        }
+        
+        if (parsedClasses.length > 0) {
+          setClasses(prev => [...prev, ...parsedClasses]);
+          setUploadedFileName(file.name);
+          setUploadStatus(`✓ Imported ${parsedClasses.length} classes from ${file.name}`);
+        } else {
+          setUploadStatus('⚠ No classes found. Check file format.');
+        }
+      } catch (error) {
+        console.error('Error parsing Excel file:', error);
+        setUploadStatus('⚠ Error reading file. Please check the format.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
   };
 
   const handleRLMFileSelect = (e) => {
@@ -306,13 +415,10 @@ export default function DonScheduler() {
   const handleClassDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingClass(false); };
   const handleClassDrop = (e) => {
     e.preventDefault(); e.stopPropagation(); setIsDraggingClass(false);
-    Array.from(e.dataTransfer.files).forEach(file => {
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (e) => setClassImages(prev => [...prev, { data: e.target.result, name: file.name }]);
-        reader.readAsDataURL(file);
-      }
-    });
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      parseExcelFile(file);
+    }
   };
 
   const handleRLMDragOver = (e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRLM(true); };
@@ -747,7 +853,7 @@ export default function DonScheduler() {
         .view-toggle-btn:hover:not(.active) { color: white; }
       `}</style>
 
-      <input type="file" ref={classInputRef} className="hidden-input" accept="image/*" onChange={handleClassFileSelect} />
+      <input type="file" ref={classInputRef} className="hidden-input" accept=".xlsx,.xls,.csv" onChange={handleClassFileSelect} />
       <input type="file" ref={rlmInputRef} className="hidden-input" accept="image/*" onChange={handleRLMFileSelect} />
 
       <h1>Don Schedule Manager</h1>
@@ -1008,18 +1114,50 @@ export default function DonScheduler() {
       {step === 2 && (
         <div className="glass-card" style={{ maxWidth: 800, margin: '0 auto' }}>
           <h2><BookOpen size={24} /> Class Schedule</h2>
-          <p className="section-desc">Add your classes manually, or upload a screenshot for reference</p>
+          <p className="section-desc">Upload your class schedule from Excel/CSV, or add classes manually</p>
           
           <div className={`upload-zone ${isDraggingClass ? 'dragging' : ''}`} onClick={() => classInputRef.current?.click()} onDragOver={handleClassDragOver} onDragEnter={handleClassDragOver} onDragLeave={handleClassDragLeave} onDrop={handleClassDrop} style={{ marginBottom: 20 }}>
-            <Image size={36} style={{ opacity: 0.4, marginBottom: 10 }} />
-            <div style={{ fontSize: 15, fontWeight: 500 }}>Upload schedule image for reference</div>
-            <div style={{ fontSize: 12, opacity: 0.5, marginTop: 4 }}>(Optional - add classes manually below)</div>
+            <FileSpreadsheet size={36} style={{ opacity: 0.4, marginBottom: 10 }} />
+            <div style={{ fontSize: 15, fontWeight: 500 }}>Upload Excel or CSV file</div>
+            <div style={{ fontSize: 12, opacity: 0.5, marginTop: 4 }}>Drag & drop or click to browse (.xlsx, .xls, .csv)</div>
+          </div>
+
+          {uploadStatus && (
+            <div style={{ 
+              padding: 14, 
+              background: uploadStatus.startsWith('✓') ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', 
+              borderRadius: 10, 
+              marginBottom: 16,
+              border: `1px solid ${uploadStatus.startsWith('✓') ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
+              fontSize: 13,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8
+            }}>
+              {uploadStatus.startsWith('✓') ? <Check size={16} style={{ color: '#34d399' }} /> : <AlertCircle size={16} style={{ color: '#fbbf24' }} />}
+              {uploadStatus}
+            </div>
+          )}
+
+          <div style={{ padding: 14, background: 'rgba(59,130,246,0.1)', borderRadius: 10, marginBottom: 18, border: '1px solid rgba(59,130,246,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <Table size={16} style={{ color: '#60a5fa' }} />
+              <span style={{ fontWeight: 600, fontSize: 13 }}>Expected Format</span>
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.8, fontFamily: 'monospace', background: 'rgba(0,0,0,0.2)', padding: 10, borderRadius: 6, overflowX: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', gap: '8px 16px' }}>
+                <span style={{ fontWeight: 600 }}>Day</span>
+                <span style={{ fontWeight: 600 }}>Start Time</span>
+                <span style={{ fontWeight: 600 }}>End Time</span>
+                <span style={{ fontWeight: 600 }}>Course</span>
+                <span>Monday</span><span>11:00 AM</span><span>12:30 PM</span><span>CAST-3091H</span>
+                <span>Wednesday</span><span>9:00 AM</span><span>11:00 AM</span><span>CAS-3094R</span>
+              </div>
+            </div>
           </div>
           
-          {classImages.length > 0 && <div className="image-preview">{classImages.map((img, idx) => <img key={idx} src={img.data} alt="Schedule" onClick={() => setShowImageModal(img.data)} />)}</div>}
-          
-          <div style={{ padding: 18, background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 18, marginTop: 18 }}>
-            <div style={{ fontWeight: 600, marginBottom: 14, fontSize: 14 }}>Add Class</div>
+          <div style={{ padding: 18, background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 18 }}>
+            <div style={{ fontWeight: 600, marginBottom: 14, fontSize: 14 }}>Or Add Manually</div>
             <div className="form-row">
               <input className="input-field" placeholder="Class name (e.g., SOCI-2110H)" value={newClass.name} onChange={e => setNewClass({ ...newClass, name: e.target.value })} style={{ flex: 1 }} />
               <select className="input-field" value={newClass.day} onChange={e => setNewClass({ ...newClass, day: e.target.value })} style={{ width: 'auto' }}>
@@ -1040,7 +1178,15 @@ export default function DonScheduler() {
           
           {classes.length > 0 && (
             <div>
-              <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 14 }}>Your Classes ({classes.length})</div>
+              <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Your Classes ({classes.length})</span>
+                <button 
+                  onClick={() => { setClasses([]); setUploadStatus(''); setUploadedFileName(''); }} 
+                  style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}
+                >
+                  Clear All
+                </button>
+              </div>
               <div style={{ display: 'flex', flexWrap: 'wrap' }}>
                 {classes.map(cls => (
                   <span key={cls.id} className="tag class">
